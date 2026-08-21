@@ -1,0 +1,35 @@
+# Frozen baseline configuration
+# This captures the exact parameters for the "Standard Medical GraphRAG" baseline.
+# DO NOT modify after baseline experiments are recorded.
+
+# Inherits from base_config.yaml — only overrides are listed here.
+
+experiment:
+  name: "baseline_standard_graphrag"
+  description: >
+    Standard Medical GraphRAG baseline using the existing three-layer
+    architecture with Summary-node retrieval, REFERENCE expansion,
+    and evidence collection. No auditing, confidence scoring, or
+    counterfactual analysis.
+  random_seed: 42
+  dataset_version: "pneumonia-100"
+  frozen_at: null  # Set automatically when baseline is first run
+
+retrieval:
+  top_k: 3
+  max_hops: 2
+  max_evidence: 120
+  method: "standard"  # standard | auditable
+
+# Queries for baseline evaluation
+queries:
+  - "What are the risk factors and treatment options for this patient's pneumonia?"
+  - "What clinical evidence supports the pneumonia diagnosis?"
+  - "What complications should be monitored for this pneumonia patient?"
+  - "What laboratory findings are relevant to the pneumonia diagnosis?"
+  - "What is the recommended antibiotic therapy based on the available evidence?"
+  - "Are there any contraindications to the current treatment plan?"
+  - "What imaging findings support the respiratory diagnosis?"
+  - "What are the likely outcomes based on the patient's comorbidities?"
+  - "What interventions were performed and what were their outcomes?"
+  - "What microbiology results are relevant to infection management?"

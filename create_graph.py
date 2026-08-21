@@ -88,7 +88,13 @@ def _extract_graph_elements_from_text(raw_text, source_element):
         node_desc = (match.group(3) or "").strip()
         node_type = node_type or "Entity"
         if node_id and node_id not in nodes:
-            props = {"source": "llm_extracted"}
+            props = {
+                "source": "llm_extracted",
+                "source_type": "LLM_extracted",
+                "modality": "clinical_text",
+                "extraction_confidence": "medium",
+                "extraction_method": "llm_extraction"
+            }
             if node_desc:
                 props["description"] = node_desc
             nodes[node_id] = Node(id=node_id, type=node_type, properties=props)
@@ -108,13 +114,25 @@ def _extract_graph_elements_from_text(raw_text, source_element):
             nodes[subj_id] = Node(
                 id=subj_id,
                 type=subj_type,
-                properties={"source": "llm_extracted"},
+                properties={
+                    "source": "llm_extracted",
+                    "source_type": "LLM_extracted",
+                    "modality": "clinical_text",
+                    "extraction_confidence": "medium",
+                    "extraction_method": "llm_extraction"
+                },
             )
         if obj_id not in nodes:
             nodes[obj_id] = Node(
                 id=obj_id,
                 type=obj_type,
-                properties={"source": "llm_extracted"},
+                properties={
+                    "source": "llm_extracted",
+                    "source_type": "LLM_extracted",
+                    "modality": "clinical_text",
+                    "extraction_confidence": "medium",
+                    "extraction_method": "llm_extraction"
+                },
             )
 
         relationships.append(
@@ -122,7 +140,12 @@ def _extract_graph_elements_from_text(raw_text, source_element):
                 subj=nodes[subj_id],
                 obj=nodes[obj_id],
                 type=rel_type,
-                properties={"source": "llm_extracted"},
+                properties={
+                    "source": "llm_extracted",
+                    "source_type": "LLM_extracted",
+                    "provenance": "evidence_backed",
+                    "extraction_method": "llm_relation_extraction"
+                },
             )
         )
 
@@ -150,10 +173,16 @@ def _fallback_extract_graph_elements(raw_text, source_element):
     nodes = {}
     relationships = []
 
-    def _add_node(node_id, node_type, description=""):
+    def _add_node(node_id, node_type, description="", source_type="rule_based", modality="structured_data", confidence="high"):
         key = node_id.strip()
         if key and key not in nodes:
-            props = {"source": "structured_fallback"}
+            props = {
+                "source": "structured_fallback",
+                "source_type": source_type,
+                "modality": modality,
+                "extraction_confidence": confidence,
+                "extraction_method": "structured_rule_fallback"
+            }
             if description:
                 props["description"] = description
             nodes[key] = Node(id=key, type=node_type, properties=props)
@@ -182,7 +211,13 @@ def _fallback_extract_graph_elements(raw_text, source_element):
                     subj=group_nodes[i],
                     obj=group_nodes[i + 1],
                     type="icd_related",
-                    properties={"source": "structured_fallback", "icd_chapter": chapter},
+                    properties={
+                        "source": "structured_fallback",
+                        "source_type": "dictionary",
+                        "provenance": "dictionary_derived",
+                        "extraction_method": "icd_chapter_grouping",
+                        "icd_chapter": chapter
+                    },
                 )
             )
 
@@ -192,7 +227,7 @@ def _fallback_extract_graph_elements(raw_text, source_element):
         r"PROCEDURE\s+code=(\S+)\s+icd_version=(\S+)\s+name=(.+?)(?:\n|$)", raw_text
     ):
         code, ver, name = match.group(1), match.group(2), match.group(3).strip()
-        p_node = _add_node(name, "Procedure", f"ICD-{ver} procedure code {code}: {name}")
+        p_node = _add_node(name, "Procedure", f"ICD-{ver} procedure code {code}: {name}", source_type="dictionary", modality="dictionary")
         chapter = _icd_chapter(code)
         icd_proc_groups.setdefault(chapter, []).append(p_node)
 
@@ -203,7 +238,13 @@ def _fallback_extract_graph_elements(raw_text, source_element):
                     subj=group_nodes[i],
                     obj=group_nodes[i + 1],
                     type="icd_related",
-                    properties={"source": "structured_fallback", "icd_chapter": chapter},
+                    properties={
+                        "source": "structured_fallback",
+                        "source_type": "dictionary",
+                        "provenance": "dictionary_derived",
+                        "extraction_method": "icd_chapter_grouping",
+                        "icd_chapter": chapter
+                    },
                 )
             )
 
@@ -220,7 +261,7 @@ def _fallback_extract_graph_elements(raw_text, source_element):
             match.group(4).strip(),
         )
         desc = f"Lab test (item {itemid}): {label}, fluid={fluid}, category={category}"
-        l_node = _add_node(label, "LabTest", desc)
+        l_node = _add_node(label, "LabTest", desc, source_type="dictionary", modality="dictionary")
         group_key = f"{fluid}_{category}"
         lab_category_groups.setdefault(group_key, []).append(l_node)
 
@@ -232,7 +273,13 @@ def _fallback_extract_graph_elements(raw_text, source_element):
                     subj=group_nodes[i],
                     obj=group_nodes[i + 1],
                     type="same_category",
-                    properties={"source": "structured_fallback", "category": group_key},
+                    properties={
+                        "source": "structured_fallback",
+                        "source_type": "dictionary",
+                        "provenance": "dictionary_derived",
+                        "extraction_method": "lab_category_chain",
+                        "category": group_key
+                    },
                 )
             )
 
@@ -245,7 +292,12 @@ def _fallback_extract_graph_elements(raw_text, source_element):
                 subj=proc_heads[chapter],
                 obj=diag_heads[chapter],
                 type="procedure_for_category",
-                properties={"source": "structured_fallback"},
+                properties={
+                    "source": "structured_fallback",
+                    "source_type": "dictionary",
+                    "provenance": "dictionary_derived",
+                    "extraction_method": "cross_chapter_link"
+                },
             )
         )
 
@@ -256,13 +308,13 @@ def _fallback_extract_graph_elements(raw_text, source_element):
     guideline_conditions = []
     for match in re.finditer(r"Condition\s+\d+:\s+Consider diagnosis\s+'([^']+)'", raw_text):
         name = match.group(1).strip()
-        g_node = _add_node(name, "Diagnosis", f"Guideline-referenced diagnosis: {name}")
+        g_node = _add_node(name, "Diagnosis", f"Guideline-referenced diagnosis: {name}", source_type="clinical_guideline", modality="clinical_text")
         guideline_conditions.append(g_node)
 
     guideline_interventions = []
     for match in re.finditer(r"Intervention\s+\d+:\s+Procedure option\s+'([^']+)'", raw_text):
         name = match.group(1).strip()
-        g_node = _add_node(name, "Procedure", f"Guideline-referenced procedure: {name}")
+        g_node = _add_node(name, "Procedure", f"Guideline-referenced procedure: {name}", source_type="clinical_guideline", modality="clinical_text")
         guideline_interventions.append(g_node)
 
     # Round-robin link interventions to conditions (1:1 instead of many-to-many)
@@ -275,7 +327,12 @@ def _fallback_extract_graph_elements(raw_text, source_element):
                     subj=p_node,
                     obj=d_node,
                     type="indicated_for",
-                    properties={"source": "structured_fallback"},
+                    properties={
+                        "source": "structured_fallback",
+                        "source_type": "clinical_guideline",
+                        "provenance": "structurally_generated",
+                        "extraction_method": "guideline_round_robin"
+                    },
                 )
             )
 
@@ -286,7 +343,12 @@ def _fallback_extract_graph_elements(raw_text, source_element):
                 subj=guideline_conditions[i],
                 obj=guideline_conditions[i + 1],
                 type="associated_with",
-                properties={"source": "structured_fallback"},
+                properties={
+                    "source": "structured_fallback",
+                    "source_type": "clinical_guideline",
+                    "provenance": "structurally_generated",
+                    "extraction_method": "guideline_condition_chain"
+                },
             )
         )
 
@@ -365,7 +427,12 @@ def _fallback_extract_graph_elements(raw_text, source_element):
             relationships.append(
                 Relationship(
                     subj=p_node, obj=d_node, type="performed_for",
-                    properties={"source": "structured_fallback"},
+                    properties={
+                        "source": "structured_fallback",
+                        "source_type": "structural",
+                        "provenance": "structurally_generated",
+                        "extraction_method": "round_robin_assignment"
+                    },
                 )
             )
 
@@ -375,7 +442,12 @@ def _fallback_extract_graph_elements(raw_text, source_element):
             relationships.append(
                 Relationship(
                     subj=m_node, obj=d_node, type="treats",
-                    properties={"source": "structured_fallback"},
+                    properties={
+                        "source": "structured_fallback",
+                        "source_type": "structural",
+                        "provenance": "structurally_generated",
+                        "extraction_method": "round_robin_assignment"
+                    },
                 )
             )
 
@@ -385,7 +457,12 @@ def _fallback_extract_graph_elements(raw_text, source_element):
             relationships.append(
                 Relationship(
                     subj=l_node, obj=d_node, type="monitors",
-                    properties={"source": "structured_fallback"},
+                    properties={
+                        "source": "structured_fallback",
+                        "source_type": "structural",
+                        "provenance": "structurally_generated",
+                        "extraction_method": "round_robin_assignment"
+                    },
                 )
             )
 
@@ -396,7 +473,12 @@ def _fallback_extract_graph_elements(raw_text, source_element):
                     subj=block_diagnoses[i],
                     obj=block_diagnoses[i + 1],
                     type="associated_with",
-                    properties={"source": "structured_fallback"},
+                    properties={
+                        "source": "structured_fallback",
+                        "source_type": "rule_based",
+                        "provenance": "evidence_backed",
+                        "extraction_method": "sequential_chain"
+                    },
                 )
             )
 
@@ -414,7 +496,12 @@ def _fallback_extract_graph_elements(raw_text, source_element):
                 relationships.append(
                     Relationship(
                         subj=meds[i], obj=meds[i + 1], type="same_route",
-                        properties={"source": "structured_fallback", "route": route},
+                        properties={
+                            "source": "structured_fallback",
+                            "source_type": "structural",
+                            "provenance": "structurally_generated",
+                            "route": route
+                        },
                     )
                 )
 
@@ -425,7 +512,12 @@ def _fallback_extract_graph_elements(raw_text, source_element):
                 subj=patient_node,
                 obj=block_diagnoses[0],
                 type="diagnosed_with",
-                properties={"source": "structured_fallback"},
+                properties={
+                    "source": "structured_fallback",
+                    "source_type": "MIMIC",
+                    "provenance": "evidence_backed",
+                    "extraction_method": "mimic_structured_admission"
+                },
             )
         )
 

@@ -114,8 +114,75 @@ def select_top_gids(n4j, sumq, top_k=3):
     top = [gid for _, gid in scored[: max(1, top_k)] if gid]
     return top
 
+
+def select_top_gids_with_scores(n4j, sumq, top_k=3):
+    """Returns list of (score, gid) tuples sorted by score descending."""
+    rows = n4j.query(
+        """
+        MATCH (s:Summary)
+        RETURN s.content AS content, s.gid AS gid
+        """
+    )
+
+    query_summary = _summary_to_text(sumq[0] if isinstance(sumq, list) and sumq else sumq)
+    query_embedding = get_embedding(query_summary)
+
+    if not rows:
+        entity_rows = n4j.query(
+            """
+            MATCH (n)
+            WHERE n.embedding IS NOT NULL AND n.gid IS NOT NULL AND NOT n:Summary
+            RETURN n.gid AS gid, n.embedding AS embedding
+            LIMIT 500
+            """
+        )
+        if not entity_rows:
+            return []
+        scored = []
+        for row in entity_rows:
+            emb = row.get("embedding")
+            gid = row.get("gid")
+            if emb and gid:
+                scored.append((_cosine(emb, query_embedding), gid))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        seen = set()
+        top = []
+        for s, gid in scored:
+            if gid not in seen:
+                seen.add(gid)
+                top.append((s, gid))
+            if len(top) >= max(1, top_k):
+                break
+        return top
+
+    scored = []
+    for row in rows:
+        summary_text = _summary_to_text(row.get("content"))
+        if not summary_text:
+            continue
+        if _use_remote_retrieval_rater():
+            try:
+                rate = call_llm(
+                    sys_p,
+                    "The two summaries for comparison are: \n Summary 1: "
+                    + summary_text
+                    + "\n Summary 2: "
+                    + query_summary,
+                )
+                score = _rating_to_score(rate)
+            except Exception:
+                score = _cosine(get_embedding(summary_text), query_embedding)
+        else:
+            score = _cosine(get_embedding(summary_text), query_embedding)
+        scored.append((score, row.get("gid")))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [(s, gid) for s, gid in scored[: max(1, top_k)] if gid]
+
+
 def seq_ret(n4j, sumq):
     top = select_top_gids(n4j, sumq, top_k=3)
     if not top:
         raise ValueError("No Summary nodes found for retrieval")
     return top[0]
+

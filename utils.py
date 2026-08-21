@@ -80,6 +80,22 @@ def get_embedding(text, mod = "text-embedding-3-small"):
     except Exception:
         return _hash_embedding(text)
 
+
+def cosine_similarity(vec1, vec2) -> float:
+    """Compute cosine similarity between two vectors."""
+    if vec1 is None or vec2 is None:
+        return 0.0
+    va = np.array(vec1, dtype=float)
+    vb = np.array(vec2, dtype=float)
+    if va.size == 0 or vb.size == 0 or va.size != vb.size:
+        return 0.0
+    na = np.linalg.norm(va)
+    nb = np.linalg.norm(vb)
+    if na == 0 or nb == 0:
+        return 0.0
+    return float(np.dot(va, vb) / (na * nb))
+
+
 def fetch_texts(n4j):
     # Fetch the text for each node
     query = "MATCH (n) RETURN n.id AS id"
@@ -310,6 +326,46 @@ def ref_link(n4j, gid1, gid2):
 """
     result = n4j.query(trinity_query, {'gid1': gid1, 'gid2': gid2})
     return result
+
+
+def load_yaml_config(config_path, override_env=False):
+    """Load experiment configuration from a YAML file.
+
+    Args:
+        config_path: Path to the YAML configuration file.
+        override_env: If True, set environment variables from the config
+            so that existing code (which reads os.getenv) picks up the values.
+
+    Returns:
+        dict: The loaded configuration dictionary.
+    """
+    import yaml
+
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+
+    if override_env and config:
+        _env_mapping = {
+            ("neo4j", "uri"): "NEO4J_URI",
+            ("neo4j", "username"): "NEO4J_USERNAME",
+            ("neo4j", "password"): "NEO4J_PASSWORD",
+            ("embedding", "model"): "OPENAI_EMBEDDING_MODEL",
+            ("embedding", "use_remote"): "USE_REMOTE_EMBEDDINGS",
+            ("llm", "model"): "OPENAI_MODEL",
+            ("llm", "api_base"): "OPENAI_API_BASE_URL",
+            ("llm", "use_for_extraction"): "USE_LLM_EXTRACTION",
+            ("llm", "use_for_summary"): "USE_LLM_SUMMARY",
+            ("llm", "use_for_answer"): "USE_LLM_ANSWER",
+        }
+        for (section, key), env_var in _env_mapping.items():
+            val = (config.get(section) or {}).get(key)
+            if val is not None:
+                if isinstance(val, bool):
+                    os.environ[env_var] = "1" if val else "0"
+                else:
+                    os.environ[env_var] = str(val)
+
+    return config
 
 
 def str_uuid():

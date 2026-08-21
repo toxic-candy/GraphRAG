@@ -146,6 +146,9 @@ def main():
     parser.add_argument("--neo4j-username", type=str, default=os.getenv("NEO4J_USERNAME", "neo4j"))
     parser.add_argument("--neo4j-password", type=str, default=os.getenv("NEO4J_PASSWORD"))
 
+    parser.add_argument("--audit", action="store_true", help="Enable auditable retrieval with full decision logging")
+    parser.add_argument("--audit-output", type=str, default=None, help="Save structured audit record to JSON file")
+
     args = parser.parse_args()
 
     if not args.neo4j_password:
@@ -164,6 +167,53 @@ def main():
         username=args.neo4j_username,
         password=args.neo4j_password,
     )
+
+    if args.audit:
+        from graphrag_audit import AuditableRetriever
+        retriever = AuditableRetriever(
+            driver=n4j,
+            config={
+                "top_k": max(1, args.top_k),
+                "max_hops": args.max_hops,
+                "max_evidence": args.max_evidence,
+            }
+        )
+        audit_res = retriever.retrieve(query=question)
+        evidence = audit_res.evidence
+        answer = _answer_with_citations(question, evidence) if evidence else "No evidence retrieved."
+
+        print("=" * 80)
+        print("AUDITABLE RETRIEVAL TRACE")
+        print("=" * 80)
+        print(f"Query: {question}")
+        print(f"Decision Rationale: {audit_res.decision_rationale}\n")
+        
+        print(f"=== Selected Paths ({len(audit_res.selected_paths)}) ===")
+        for p in audit_res.selected_paths:
+            print(f"  [{p.path_id}] (Score: {p.path_score:.3f}) {p.readable_path}")
+
+        print(f"\n=== Rejected Alternative Paths ({len(audit_res.rejected_paths)}) ===")
+        for p in audit_res.rejected_paths[:5]:
+            print(f"  [{p.path_id}] (Score: {p.path_score:.3f}) {p.readable_path} --> REASON: {p.rejection_reason}")
+
+        print(f"\n=== Edge Confidence Breakdown ({len(audit_res.edge_confidence)}) ===")
+        for e in audit_res.edge_confidence[:8]:
+            print(f"  {e['edge']} => Confidence: {e['confidence']:.3f} (Semantic: {e['semantic_score']:.2f}, Graph: {e['graph_support']:.2f}, Reliability: {e['source_reliability']:.2f})")
+
+        print(f"\n=== Evidence Count ===")
+        print(len(evidence))
+
+        print(f"\n=== Answer ===")
+        print(answer)
+
+        if args.audit_output:
+            import json
+            out_dict = audit_res.to_dict()
+            out_dict["answer"] = answer
+            with open(args.audit_output, "w", encoding="utf-8") as f:
+                json.dump(out_dict, f, indent=2)
+            print(f"\nAudit record saved to {args.audit_output}")
+        return
 
     q_summary = _question_summary(question)
     seed_gids = select_top_gids(n4j, q_summary, top_k=max(1, args.top_k))
@@ -195,3 +245,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

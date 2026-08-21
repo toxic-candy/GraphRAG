@@ -1,0 +1,34 @@
+# Default experiment configuration for Medical GraphRAG
+# All parameters that affect experiment reproducibility are centralized here.
+
+neo4j:
+  uri: "bolt://localhost:7687"
+  username: "neo4j"
+  password: null  # Must be set via NEO4J_PASSWORD env var or CLI override
+
+embedding:
+  model: "text-embedding-3-small"
+  use_remote: true           # false = SHA-256 hash fallback (NOT suitable for evaluation)
+  dimension: 1536
+
+llm:
+  model: "meta-llama/llama-3-8b-instruct"
+  api_base: "https://openrouter.ai/api/v1"
+  temperature: 0.1
+  max_tokens: 500
+  use_for_extraction: false  # USE_LLM_EXTRACTION
+  use_for_summary: false     # USE_LLM_SUMMARY
+  use_for_answer: false      # USE_LLM_ANSWER
+
+retrieval:
+  top_k: 3
+  max_hops: 2
+  max_evidence: 120
+
+experiment:
+  random_seed: 42
+  dataset_version: "pneumonia-100"
+  dataset_root: "./mimic-iv-3.1-pneumonia-100"
+  three_layer_root: "./dataset/three_layer"
+  output_dir: "./experiments/outputs"
+  results_dir: "./experiments/results"
