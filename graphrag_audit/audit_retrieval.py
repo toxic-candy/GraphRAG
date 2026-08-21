@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 
 from utils import get_embedding, cosine_similarity
+from .confidence import EdgeConfidenceScorer
 from .audit_types import (
     CandidateNode,
     CandidateEdge,
@@ -36,13 +37,9 @@ class AuditableRetriever:
         self.max_candidate_paths = int(retrieval_cfg.get("max_candidate_paths", 50))
         self.min_confidence_threshold = float(retrieval_cfg.get("min_confidence_threshold", 0.0))
 
-        # Configurable confidence weights (Phase 4 integration)
-        self.weights = self.config.get("confidence_weights", {
-            "semantic": 0.35,
-            "graph_support": 0.25,
-            "source_reliability": 0.25,
-            "stability": 0.15,
-        })
+        # Initialize confidence scorer (Phase 4 integration)
+        self.scorer = EdgeConfidenceScorer(config=self.config)
+        self.weights = self.scorer.weights
 
     def retrieve(
         self,
@@ -384,37 +381,15 @@ class AuditableRetriever:
         query_embedding: List[float]
     ) -> CandidateEdge:
         """
-        Creates a CandidateEdge and calculates its component confidence scores:
-          1. Semantic similarity
-          2. Graph support / connectivity
-          3. Source reliability (provenance-backed)
-          4. Stability score
+        Creates a CandidateEdge and delegates scoring to EdgeConfidenceScorer.
         """
-        # 1. Semantic score
-        endpoint_text = f"{source_id} {relation_type} {target_id}"
-        endpoint_emb = get_embedding(endpoint_text)
-        semantic = float(cosine_similarity(query_embedding, endpoint_emb))
-        semantic = max(0.0, min(1.0, (semantic + 1.0) / 2.0 if semantic < 0 else semantic))
-
-        # 2. Source reliability score based on provenance metadata
-        source_type = properties.get("source_type", "")
-        provenance = properties.get("provenance", "")
-        reliability = self._compute_source_reliability(source_type, provenance)
-
-        # 3. Graph support score (degree & reference presence)
-        graph_support = 0.8 if relation_type == "REFERENCE" else 0.6
-        if properties.get("icd_chapter"):
-            graph_support = 0.75
-
-        # 4. Stability score
-        stability = 1.0
-
-        # Aggregate confidence
-        confidence = (
-            self.weights["semantic"] * semantic +
-            self.weights["graph_support"] * graph_support +
-            self.weights["source_reliability"] * reliability +
-            self.weights["stability"] * stability
+        scored_dict = self.scorer.calculate_edge_confidence(
+            source_id=source_id,
+            relation_type=relation_type,
+            target_id=target_id,
+            query_embedding=query_embedding,
+            properties=properties,
+            driver=self.driver,
         )
 
         return CandidateEdge(
@@ -422,32 +397,14 @@ class AuditableRetriever:
             target_id=target_id,
             relation_type=relation_type,
             gid=gid,
-            semantic_score=semantic,
-            graph_support_score=graph_support,
-            source_reliability_score=reliability,
-            stability_score=stability,
-            confidence_score=float(confidence),
+            semantic_score=scored_dict["semantic_score"],
+            graph_support_score=scored_dict["graph_support"],
+            source_reliability_score=scored_dict["source_reliability"],
+            stability_score=scored_dict["stability"],
+            confidence_score=scored_dict["confidence"],
             properties=properties,
-            provenance={
-                "source_type": source_type or "rule_based",
-                "provenance": provenance or "structurally_generated",
-                "extraction_method": properties.get("extraction_method", "unknown"),
-            }
+            provenance=scored_dict["provenance"],
         )
-
-    def _compute_source_reliability(self, source_type: str, provenance: str) -> float:
-        """
-        Maps provenance and extraction source to an inspectable heuristic reliability score.
-        """
-        if provenance == "evidence_backed":
-            return 0.90 if source_type == "MIMIC" else 0.75
-        elif provenance == "dictionary_derived":
-            return 0.70
-        elif source_type == "LLM_extracted":
-            return 0.65
-        elif provenance == "structurally_generated":
-            return 0.40
-        return 0.50
 
     def _score_candidate_paths(
         self,
@@ -455,7 +412,7 @@ class AuditableRetriever:
         query_embedding: List[float]
     ) -> List[CandidatePath]:
         """
-        Computes composite confidence scores for all candidate reasoning paths.
+        Computes composite confidence scores for all candidate reasoning paths using EdgeConfidenceScorer.
         """
         for path in candidate_paths:
             if not path.edges:
@@ -465,10 +422,10 @@ class AuditableRetriever:
 
             edge_confs = [float(e.get("confidence_score", 0.5)) for e in path.edges]
             path.edge_scores = edge_confs
-
-            # Path score: mean of edge confidences with a slight penalty for longer hops
-            hop_penalty = 1.0 if len(edge_confs) == 1 else 0.95
-            path.path_score = float(np.mean(edge_confs) * hop_penalty)
+            path.path_score = self.scorer.calculate_path_confidence(
+                edge_scores=edge_confs,
+                hop_count=len(path.edges)
+            )
 
         # Sort candidate paths by score descending
         candidate_paths.sort(key=lambda p: p.path_score, reverse=True)

@@ -9,6 +9,11 @@ from .audit_types import (
     CandidateEdge,
     AuditRetrievalResult,
 )
+from .confidence import EdgeConfidenceScorer
+from .stability import RetrievalStabilityTester, StabilityReport
+from .counterfactual import CounterfactualEngine, CounterfactualResult
+from .compliance import PneumoniaComplianceVerifier, ComplianceResult, ComplianceCheck
+from .audit_report import AuditReport, AuditReportCompiler
 from .audit_retrieval import AuditableRetriever
 
 __all__ = [
@@ -16,5 +21,15 @@ __all__ = [
     "CandidateNode",
     "CandidateEdge",
     "AuditRetrievalResult",
+    "EdgeConfidenceScorer",
+    "RetrievalStabilityTester",
+    "StabilityReport",
+    "CounterfactualEngine",
+    "CounterfactualResult",
+    "PneumoniaComplianceVerifier",
+    "ComplianceResult",
+    "ComplianceCheck",
+    "AuditReport",
+    "AuditReportCompiler",
     "AuditableRetriever",
 ]
