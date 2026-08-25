@@ -3,19 +3,26 @@ from concurrent.futures import ThreadPoolExecutor
 import tiktoken
 import os
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 def _client():
-    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+    api_key = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+    base_url = os.getenv("OPENAI_API_BASE_URL", "https://api.groq.com/openai/v1")
     return OpenAI(
         api_key=api_key,
-        base_url=os.getenv("OPENAI_API_BASE_URL", "https://openrouter.ai/api/v1"),
-        timeout=20,
+        base_url=base_url,
+        timeout=30,
         max_retries=0,
     )
 
 
 def _chat_model_name():
-    return os.getenv("OPENAI_MODEL", "meta-llama/llama-3-8b-instruct")
+    return os.getenv("GROQ_MODEL") or os.getenv("OPENAI_MODEL", "llama-3.3-70b-versatile")
 
 
 sum_prompt = """

@@ -7,6 +7,12 @@ from camel.storages.graph_storages.graph_element import GraphElement, Node, Rela
 
 from utils import add_ge_emb, add_gid, merge_similar_nodes, add_sum
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 KG_SYSTEM_PROMPT = (
     "You are a medical knowledge graph extraction engine. "
@@ -37,11 +43,12 @@ def _extract_graph_elements_from_text(raw_text, source_element):
     if os.getenv("USE_LLM_EXTRACTION", "0") != "1":
         return _fallback_extract_graph_elements(raw_text, source_element)
 
-    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+    api_key = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         return _fallback_extract_graph_elements(raw_text, source_element)
 
-    model = os.getenv("OPENAI_MODEL", "meta-llama/llama-3-8b-instruct")
+    model = os.getenv("GROQ_MODEL") or os.getenv("OPENAI_MODEL", "llama-3.3-70b-versatile")
+    base_url = os.getenv("OPENAI_API_BASE_URL", "https://api.groq.com/openai/v1")
 
     user_prompt = (
         "Extract typed medical entities and the direct relationships between them. "
@@ -53,10 +60,8 @@ def _extract_graph_elements_from_text(raw_text, source_element):
     try:
         client = OpenAI(
             api_key=api_key,
-            base_url=os.getenv(
-                "OPENAI_API_BASE_URL", "https://openrouter.ai/api/v1"
-            ),
-            timeout=20,
+            base_url=base_url,
+            timeout=30,
             max_retries=0,
         )
         response = client.chat.completions.create(

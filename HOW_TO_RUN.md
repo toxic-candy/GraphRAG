@@ -18,7 +18,18 @@ pip install -r requirements.txt
 pip install pyyaml neo4j requests numpy pydantic pytest tiktoken anthropic pillow unstructured openai python-dotenv pandas
 ```
 
-### 1.2 Start Neo4j (Local Docker)
+### 1.2 Configure Groq API (Free Tier) & Environment Variables
+Copy `.env.example` to `.env` (already done) and put your free Groq API key:
+```bash
+# In .env:
+GROQ_API_KEY=gsk_your_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+USE_LLM_ANSWER=1
+```
+
+Get a free key instantly at [https://console.groq.com/keys](https://console.groq.com/keys).
+
+### 1.3 Start Neo4j (Local Docker)
 ```bash
 docker rm -f medpneu-neo4j >/dev/null 2>&1 || true
 docker run -d \
@@ -29,22 +40,7 @@ docker run -d \
   neo4j:5
 ```
 
-Export your Neo4j credentials:
-```bash
-export NEO4J_URI="bolt://localhost:7687"
-export NEO4J_USERNAME="neo4j"
-export NEO4J_PASSWORD="test1234"
-```
-
-*(Optional)* If you want to use OpenAI/OpenRouter for embeddings and LLM reasoning:
-```bash
-export OPENAI_API_KEY="your-api-key"
-export OPENAI_API_BASE_URL="https://openrouter.ai/api/v1"  # Or standard OpenAI
-export OPENAI_MODEL="meta-llama/llama-3-8b-instruct"
-export USE_REMOTE_EMBEDDINGS=1
-export USE_LLM_ANSWER=1
-```
-*(If no API keys are set, the system automatically uses deterministic local hash embeddings and structured local reasoning modes).*
+*(Note: If no API key is provided, the system automatically falls back to deterministic local hash embeddings and structured rule-based reasoning).*
 
 ---
 
