@@ -178,6 +178,71 @@ def _fallback_extract_graph_elements(raw_text, source_element):
     nodes = {}
     relationships = []
 
+    # ---- Clinical type classification keywords ----
+    _DISEASE_KEYWORDS = {
+        "pneumonia", "tuberculosis", "sepsis", "meningitis", "endocarditis",
+        "cellulitis", "osteomyelitis", "bronchitis", "influenza", "hepatitis",
+        "encephalitis", "pericarditis", "peritonitis", "abscess", "empyema",
+        "bacteremia", "colitis", "gastroenteritis", "pharyngitis", "sinusitis",
+        "tonsillitis", "otitis", "cystitis", "pyelonephritis", "cholecystitis",
+        "pancreatitis", "diverticulitis", "arthritis", "myocarditis",
+        "cardiomyopathy", "fibrosis", "cirrhosis", "neoplasm", "cancer",
+        "tumor", "malignancy", "lymphoma", "leukemia", "sarcoma",
+        "diabetes", "asthma", "copd", "emphysema",
+    }
+    _CONDITION_KEYWORDS = {
+        "failure", "insufficiency", "disorder", "syndrome", "dysfunction",
+        "deficiency", "overload", "imbalance", "abnormality", "deformity",
+        "stenosis", "obstruction", "blockage", "occlusion", "thrombosis",
+        "embolism", "hemorrhage", "effusion", "edema", "hypertension",
+        "hypotension", "tachycardia", "bradycardia", "arrhythmia",
+        "fibrillation", "anemia", "acidosis", "alkalosis", "hyperkalemia",
+        "hyperpotassemia", "hyponatremia", "hyperglycemia", "hypoglycemia",
+    }
+    _SYMPTOM_KEYWORDS = {
+        "pain", "fever", "cough", "dyspnea", "nausea", "vomiting",
+        "diarrhea", "fatigue", "weakness", "dizziness", "headache",
+        "swelling", "rash", "pruritus", "bleeding", "hemoptysis",
+        "wheezing", "stridor", "confusion", "syncope", "palpitation",
+        "restless", "insomnia", "malaise", "chills", "rigors", "tremor",
+        "paresthesia", "numbness", "dysphagia", "constipation",
+    }
+    _ANATOMY_KEYWORDS = {
+        "lung", "heart", "liver", "kidney", "brain", "artery", "vein",
+        "lobe", "ventricle", "atrium", "aorta", "bronchus", "pleura",
+        "peritoneum", "mediastinum", "thorax", "abdomen", "pelvis",
+        "femur", "tibia", "spine", "vertebra", "cortex", "cerebral",
+        "pulmonary", "hepatic", "renal", "cardiac", "cranial",
+        "axillary", "carotid", "femoral", "pericardial",
+    }
+    _INFECTION_KEYWORDS = {
+        "infection", "infectious", "infected", "septic", "mrsa",
+        "vre", "esbl", "c. diff", "clostridium", "candida", "fungal",
+        "viral", "bacterial",
+    }
+    _INJURY_KEYWORDS = {
+        "fracture", "dislocation", "sprain", "strain", "contusion",
+        "laceration", "wound", "burn", "injury", "trauma", "rupture",
+        "tear", "amputation", "bite", "crushing", "concussion",
+    }
+
+    def _classify_diagnosis(name):
+        """Classify a diagnosis string into a specific entity type."""
+        name_lower = name.lower()
+        if any(kw in name_lower for kw in _DISEASE_KEYWORDS):
+            return "Disease"
+        if any(kw in name_lower for kw in _INFECTION_KEYWORDS):
+            return "Infection"
+        if any(kw in name_lower for kw in _INJURY_KEYWORDS):
+            return "Condition"
+        if any(kw in name_lower for kw in _SYMPTOM_KEYWORDS):
+            return "Symptom"
+        if any(kw in name_lower for kw in _CONDITION_KEYWORDS):
+            return "Condition"
+        if any(kw in name_lower for kw in _ANATOMY_KEYWORDS):
+            return "Anatomy"
+        return "Condition"  # default to Condition rather than generic Diagnosis
+
     def _add_node(node_id, node_type, description="", source_type="rule_based", modality="structured_data", confidence="high"):
         key = node_id.strip()
         if key and key not in nodes:
@@ -196,6 +261,7 @@ def _fallback_extract_graph_elements(raw_text, source_element):
     # =====================================================================
     # 1) DICTIONARY DATA  (bottom / middle layer)
     #    Create clustered sub-graphs using ICD code grouping.
+    #    Classify diagnoses into Disease / Condition / Symptom / Infection.
     # =====================================================================
 
     # --- Diagnosis dictionary entries ---
@@ -204,7 +270,8 @@ def _fallback_extract_graph_elements(raw_text, source_element):
         r"DIAGNOSIS\s+code=(\S+)\s+icd_version=(\S+)\s+name=(.+?)(?:\n|$)", raw_text
     ):
         code, ver, name = match.group(1), match.group(2), match.group(3).strip()
-        d_node = _add_node(name, "Diagnosis", f"ICD-{ver} code {code}: {name}")
+        entity_type = _classify_diagnosis(name)
+        d_node = _add_node(name, entity_type, f"ICD-{ver} code {code}: {name}")
         chapter = _icd_chapter(code)
         icd_diag_groups.setdefault(chapter, []).append(d_node)
 
@@ -360,7 +427,22 @@ def _fallback_extract_graph_elements(raw_text, source_element):
     # =====================================================================
     # 3) PATIENT CLINICAL DATA  (top layer)
     #    Distribute relationships evenly — NO single diagnosis hub.
+    #    Create diverse entity types matching clinical ontology:
+    #      Disease, Condition, Symptom, Anatomy, Measurement, Bacteria,
+    #      Infection, Medical_Test, Clinical_Finding, Medical_Device
     # =====================================================================
+
+    # ---- Antibiotic classification for Medication sub-typing ----
+    _ANTIBIOTIC_KEYWORDS = {
+        "ceftriaxone", "cefepime", "vancomycin", "meropenem", "piperacillin",
+        "tazobactam", "azithromycin", "levofloxacin", "ciprofloxacin",
+        "amoxicillin", "ampicillin", "metronidazole", "doxycycline",
+        "clindamycin", "gentamicin", "tobramycin", "trimethoprim",
+        "sulfamethoxazole", "linezolid", "daptomycin", "cefazolin",
+        "cephalexin", "penicillin", "oxacillin", "nafcillin", "ertapenem",
+        "imipenem", "cilastatin", "colistin", "polymyxin", "rifampin",
+        "isoniazid", "ethambutol", "pyrazinamide",
+    }
 
     patient_match = re.search(r"patient_id:\s*(\d+)", raw_text)
     patient_id = f"patient_{patient_match.group(1)}" if patient_match else None
@@ -370,13 +452,14 @@ def _fallback_extract_graph_elements(raw_text, source_element):
     admission_blocks = re.split(r"(?=Admission summary:)", raw_text)
 
     for block in admission_blocks:
-        # --- Diagnoses ---
+        # --- Diagnoses → classify into Disease / Condition / Symptom / Infection ---
         block_diagnoses = []
         for diag in re.findall(r"\[\d+\]\s*([^;\.\n]+)", block):
             d = diag.strip()
             if not d:
                 continue
-            d_node = _add_node(d, "Diagnosis", f"Clinical diagnosis: {d}")
+            entity_type = _classify_diagnosis(d)
+            d_node = _add_node(d, entity_type, f"Clinical {entity_type.lower()}: {d}")
             block_diagnoses.append(d_node)
 
         # --- Procedures ---
@@ -390,7 +473,7 @@ def _fallback_extract_graph_elements(raw_text, source_element):
                 p_node = _add_node(proc_name, "Procedure", f"Medical procedure: {proc_name}")
                 block_procedures.append(p_node)
 
-        # --- Medications ---
+        # --- Medications → classify as Medication or Antibiotic medication ---
         block_medications = []
         meds_line = re.search(r"Medications:\s*(.*)", block)
         if meds_line:
@@ -399,26 +482,123 @@ def _fallback_extract_graph_elements(raw_text, source_element):
                 route = med.split(" via ")[1].strip() if " via " in med else ""
                 if not med_name:
                     continue
+                # Strip dosage to get base medication name for classification
+                base_name = re.sub(r"\s+\d+[\.\d]*\s*(mg|gm|g|mcg|mL|units?|mEq)\b.*", "", med_name, flags=re.IGNORECASE).strip()
+                is_antibiotic = any(kw in base_name.lower() for kw in _ANTIBIOTIC_KEYWORDS)
+                med_type = "Medication"
                 desc = f"Medication: {med_name}"
+                if is_antibiotic:
+                    desc = f"Antibiotic medication: {med_name}"
                 if route:
                     desc += f" administered via {route}"
-                m_node = _add_node(med_name, "Medication", desc)
+                m_node = _add_node(med_name, med_type, desc)
+                if is_antibiotic:
+                    m_node.properties["medication_class"] = "antibiotic"
                 block_medications.append(m_node)
 
-        # --- Lab Tests ---
+        # --- Lab Tests → LabTest nodes + Measurement nodes for values ---
         block_labs = []
+        block_measurements = []
         labs_line = re.search(r"Recent labs:\s*(.*)", block)
         if labs_line:
             for lab in [l.strip() for l in labs_line.group(1).split(";") if l.strip()]:
                 lab_name = lab.split(":")[0].strip()
-                lab_value = lab.split(":")[1].strip() if ":" in lab else ""
+                lab_value_str = lab.split(":")[1].strip() if ":" in lab else ""
                 if not lab_name:
                     continue
                 desc = f"Laboratory test: {lab_name}"
-                if lab_value:
-                    desc += f", result: {lab_value}"
+                if lab_value_str:
+                    desc += f", result: {lab_value_str}"
                 l_node = _add_node(lab_name, "LabTest", desc)
                 block_labs.append(l_node)
+
+                # Create Measurement node for numeric lab values
+                val_match = re.match(r"([\d.]+)\s*([A-Za-z/%]+)?\s*(.*)?", lab_value_str)
+                if val_match and val_match.group(1):
+                    meas_id = f"{lab_name} = {lab_value_str}"
+                    meas_desc = f"Measurement: {lab_name} value {lab_value_str}"
+                    is_abnormal = "abnormal" in lab_value_str.lower() or "flag" in lab_value_str.lower()
+                    meas_node = _add_node(meas_id, "Measurement", meas_desc)
+                    if is_abnormal and meas_node:
+                        meas_node.properties["flag"] = "abnormal"
+                    if meas_node:
+                        block_measurements.append((meas_node, l_node))
+                        # Measurement --measured_by--> LabTest
+                        relationships.append(
+                            Relationship(
+                                subj=meas_node, obj=l_node, type="measured_by",
+                                properties={
+                                    "source": "structured_fallback",
+                                    "source_type": "MIMIC",
+                                    "provenance": "evidence_backed",
+                                    "extraction_method": "lab_value_extraction"
+                                },
+                            )
+                        )
+
+        # --- Microbiology → Bacteria / Microorganism nodes ---
+        block_bacteria = []
+        micro_line = re.search(r"Microbiology:\s*(.*)", block)
+        if micro_line:
+            micro_text = micro_line.group(1)
+            # Extract culture types as Medical_Test nodes
+            for culture_match in re.finditer(r"([\w\s]+Culture[\w\s]*|MRSA SCREEN|URINE CULTURE)", micro_text, re.IGNORECASE):
+                culture_name = culture_match.group(0).strip().rstrip(",")
+                if culture_name:
+                    c_node = _add_node(culture_name, "Medical_Test",
+                                       f"Microbiology test: {culture_name}",
+                                       source_type="MIMIC", modality="microbiology")
+                    # Link culture test to first diagnosis if available
+                    if block_diagnoses:
+                        relationships.append(
+                            Relationship(
+                                subj=c_node, obj=block_diagnoses[0], type="detects",
+                                properties={
+                                    "source": "structured_fallback",
+                                    "source_type": "MIMIC",
+                                    "provenance": "evidence_backed",
+                                    "extraction_method": "microbiology_parsing"
+                                },
+                            )
+                        )
+            # Extract organism findings
+            for org_match in re.finditer(
+                r"(STAPH|STREP|ENTEROCOCCUS|PSEUDOMONAS|KLEBSIELLA|E\.?\s*COLI|"
+                r"ACINETOBACTER|SERRATIA|PROTEUS|CANDIDA|MRSA|VRE|"
+                r"MIXED BACTERIAL FLORA|NO GROWTH|No MRSA)",
+                micro_text, re.IGNORECASE
+            ):
+                org_name = org_match.group(0).strip()
+                if "NO GROWTH" in org_name.upper() or "No MRSA" in org_name:
+                    # Create a Clinical_Finding for negative results
+                    finding = _add_node(f"{org_name} (negative)", "Clinical_Finding",
+                                       f"Microbiology finding: {org_name}",
+                                       source_type="MIMIC", modality="microbiology")
+                else:
+                    finding = _add_node(org_name, "Bacterium",
+                                       f"Microorganism: {org_name}",
+                                       source_type="MIMIC", modality="microbiology")
+                    block_bacteria.append(finding)
+
+        # --- Demographics → extract anatomy-related and demographic nodes ---
+        demo_match = re.search(r"Demographics:\s*gender\s+(\w+);\s*anchor_age\s+(\d+)", block)
+        if demo_match and patient_node:
+            # Age as a clinical condition marker
+            age = int(demo_match.group(2))
+            if age >= 65:
+                elderly_node = _add_node("Elderly patient", "Condition",
+                                        f"Patient age {age}, elderly (≥65)")
+                relationships.append(
+                    Relationship(
+                        subj=patient_node, obj=elderly_node, type="has_condition",
+                        properties={
+                            "source": "structured_fallback",
+                            "source_type": "MIMIC",
+                            "provenance": "evidence_backed",
+                            "extraction_method": "demographic_extraction"
+                        },
+                    )
+                )
 
         # === INTER-ENTITY RELATIONSHIPS (distributed, no mega-hub) ===
 
@@ -470,6 +650,41 @@ def _fallback_extract_graph_elements(raw_text, source_element):
                     },
                 )
             )
+
+        # Bacteria --causes--> Disease/Infection diagnoses
+        disease_diags = [d for d in block_diagnoses
+                         if (d.properties or {}).get("source_type") == "rule_based"
+                         or d.type in ("Disease", "Infection")]
+        if block_bacteria and disease_diags:
+            for i, b_node in enumerate(block_bacteria):
+                target = disease_diags[i % len(disease_diags)]
+                relationships.append(
+                    Relationship(
+                        subj=b_node, obj=target, type="causes",
+                        properties={
+                            "source": "structured_fallback",
+                            "source_type": "MIMIC",
+                            "provenance": "evidence_backed",
+                            "extraction_method": "microbiology_causation"
+                        },
+                    )
+                )
+
+        # Abnormal measurements --indicates--> nearest Diagnosis
+        for meas_node, lab_node in block_measurements:
+            if (meas_node.properties or {}).get("flag") == "abnormal":
+                target_diag = block_diagnoses[0]
+                relationships.append(
+                    Relationship(
+                        subj=meas_node, obj=target_diag, type="indicates",
+                        properties={
+                            "source": "structured_fallback",
+                            "source_type": "MIMIC",
+                            "provenance": "evidence_backed",
+                            "extraction_method": "abnormal_lab_indication"
+                        },
+                    )
+                )
 
         # Diagnosis chain (sequential, not clique — avoids O(n^2) edges)
         for i in range(n_diag - 1):
