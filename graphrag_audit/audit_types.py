@@ -109,7 +109,7 @@ class AuditRetrievalResult:
     retrieval_parameters: Dict[str, Any] = field(default_factory=dict)
 
     # Extracted evidence strings & contributing GIDs
-    evidence: List[str] = field(default_factory=list)
+    evidence: List[Dict[str, Any]] = field(default_factory=list)
     evidence_gids: List[str] = field(default_factory=list)
     
     # Audit Trail Explanation

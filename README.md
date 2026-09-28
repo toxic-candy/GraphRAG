@@ -38,8 +38,8 @@ Generate patient report text files used as top-layer documents:
 ```bash
 python preprocess_mimic_demo.py \
   --mimic-root ./mimic-iv-3.1-pneumonia-100 \
-  --output-dir ./dataset/mimic_demo_10_pneumonia \
-  --n-patients 10
+  --output-dir ./dataset/mimic_demo_100_pneumonia \
+  --n-patients 100
 ```
 
 ### Step 4: Prepare all three layer datasets
@@ -52,7 +52,7 @@ This builds:
 ```bash
 python prepare_three_layer_data.py \
   --repo-root . \
-  --top-path ./dataset/mimic_demo_10_pneumonia \
+  --top-path ./dataset/mimic_demo_100_pneumonia \
   --out-root ./dataset/three_layer
 ```
 
@@ -138,6 +138,39 @@ UNWIND labels(n) AS lbl
 RETURN lbl, count(*) AS c
 ORDER BY c DESC
 ```
+
+Summary nodes preview:
+
+```cypher
+MATCH (s:Summary)
+RETURN s
+LIMIT 50
+```
+
+Summary content and GIDs (table view):
+
+```cypher
+MATCH (s:Summary)
+RETURN s.gid AS gid, s.content AS content
+LIMIT 50
+```
+
+Summary nodes with subgraph entities:
+
+```cypher
+MATCH (s:Summary), (e:Entity)
+WHERE s.gid = e.gid
+RETURN s, e
+LIMIT 100
+```
+
+Summary node count:
+
+```cypher
+MATCH (s:Summary)
+RETURN count(s) AS total_summaries
+```
+
 
 ### Step 8: Run post-construction graph inference (paper-style continuation)
 

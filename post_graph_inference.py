@@ -97,8 +97,12 @@ def _collect_evidence(n4j, gids, max_evidence: int = 120):
 
 def _answer_with_citations(question: str, evidence):
     numbered = []
-    for i, item in enumerate(evidence, start=1):
-        numbered.append(f"[E{i}] {item}")
+    if evidence and isinstance(evidence[0], dict):
+        for item in evidence:
+            numbered.append(f"[{item['id']}] {item['content']}")
+    else:
+        for i, item in enumerate(evidence, start=1):
+            numbered.append(f"[E{i}] {item}")
 
     if _use_llm_answering():
         user_prompt = (
@@ -138,7 +142,7 @@ def main():
     parser = argparse.ArgumentParser(description="Post-graph inference for three-layer Medical-Graph-RAG")
     parser.add_argument("--question", type=str, help="Question text")
     parser.add_argument("--question-file", type=str, help="Path to a question file")
-    parser.add_argument("--top-k", type=int, default=2, help="Top summary-matched gids")
+    parser.add_argument("--top-k", type=int, default=4, help="Top summary-matched gids")
     parser.add_argument("--max-hops", type=int, default=2, help="REFERENCE traversal hops")
     parser.add_argument("--max-evidence", type=int, default=120, help="Max evidence lines for answer")
 
@@ -210,6 +214,9 @@ def main():
             import json
             out_dict = audit_res.to_dict()
             out_dict["answer"] = answer
+            out_dir = os.path.dirname(args.audit_output)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
             with open(args.audit_output, "w", encoding="utf-8") as f:
                 json.dump(out_dict, f, indent=2)
             print(f"\nAudit record saved to {args.audit_output}")

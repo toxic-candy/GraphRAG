@@ -91,7 +91,7 @@ Run auditable retrieval with candidate path discovery, edge confidence decomposi
 ```bash
 python post_graph_inference.py \
   --neo4j-password test1234 \
-  --question "What are the clinical findings, diagnoses, and recommended treatments for this pneumonia patient?" \
+  --question "What are the risk factors and treatment options for pneumonia?" \
   --top-k 3 \
   --max-hops 2 \
   --audit \

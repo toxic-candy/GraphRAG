@@ -461,22 +461,29 @@ class AuditableRetriever:
         self,
         selected_paths: List[CandidatePath],
         seed_gids: List[str]
-    ) -> Tuple[List[str], List[str]]:
+    ) -> Tuple[List[Dict[str, Any]], List[str]]:
         """
         Generates readable evidence strings from selected paths and lists contributing GIDs.
         """
-        evidence_lines = []
+        evidence_items = []
+        evidence_texts = set()
         contributing_gids = list(seed_gids)
 
         for path in selected_paths:
-            if path.evidence_text and path.evidence_text not in evidence_lines:
-                evidence_lines.append(path.evidence_text)
+            if path.evidence_text and path.evidence_text not in evidence_texts:
+                evidence_texts.add(path.evidence_text)
+                evidence_items.append({
+                    "id": f"E{len(evidence_items) + 1}",
+                    "path_id": path.path_id,
+                    "content": path.evidence_text,
+                    "confidence": path.path_score
+                })
             for edge in path.edges:
                 g = edge.get("gid")
                 if g and g not in contributing_gids:
                     contributing_gids.append(g)
 
-        return evidence_lines, contributing_gids
+        return evidence_items, contributing_gids
 
     def _synthesize_decision_rationale(
         self,
