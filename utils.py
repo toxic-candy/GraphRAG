@@ -176,23 +176,39 @@ def add_sum(n4j,content,gid):
 
     return s
 
-def call_llm(sys, user):
-    client = _client()
-    response = _run_with_hard_timeout(
-        45,
-        client.chat.completions.create,
-        model=_chat_model_name(),
-        messages=[
-            {"role": "system", "content": sys},
-            {"role": "user", "content": f" {user}"},
-        ],
-        max_tokens=500,
-        n=1,
-        stop=None,
-        temperature=0.5,
-        timeout=20,
-    )
-    return response.choices[0].message.content
+def call_llm(sys, user, _retries: int = 3):
+    import time
+    last_err = None
+    for attempt in range(1, _retries + 1):
+        try:
+            client = _client()
+            response = _run_with_hard_timeout(
+                45,
+                client.chat.completions.create,
+                model=_chat_model_name(),
+                messages=[
+                    {"role": "system", "content": sys},
+                    {"role": "user", "content": f" {user}"},
+                ],
+                max_tokens=500,
+                n=1,
+                stop=None,
+                temperature=0.5,
+                timeout=20,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            last_err = e
+            err_str = str(e)
+            # Retry on transient connection/SSL errors only
+            if any(kw in err_str for kw in ("ConnectError", "SSL", "ConnectionError", "Connection error", "timeout", "Timeout")):
+                if attempt < _retries:
+                    wait = attempt * 2  # 2s, 4s back-off
+                    print(f"[call_llm] Attempt {attempt} failed ({type(e).__name__}: {err_str[:80]}). Retrying in {wait}s…")
+                    time.sleep(wait)
+                    continue
+            raise  # non-retriable error — surface immediately
+    raise last_err
 
 def get_response(n4j, gid, query):
     selfcont = ret_context(n4j, gid)
