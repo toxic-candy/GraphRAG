@@ -27,7 +27,7 @@ except ImportError:
 app = Flask(__name__)
 CORS(app)
 
-PYTHON = os.path.join(os.path.dirname(__file__), ".venv", "bin", "python")
+PYTHON = sys.executable
 SCRIPT = os.path.join(os.path.dirname(__file__), "post_graph_inference.py")
 
 

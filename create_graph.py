@@ -43,12 +43,10 @@ def _extract_graph_elements_from_text(raw_text, source_element):
     if os.getenv("USE_LLM_EXTRACTION", "0") != "1":
         return _fallback_extract_graph_elements(raw_text, source_element)
 
-    api_key = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
-    if not api_key:
-        return _fallback_extract_graph_elements(raw_text, source_element)
+    api_key = "ollama"
 
-    model = os.getenv("GROQ_MODEL") or os.getenv("OPENAI_MODEL", "llama-3.3-70b-versatile")
-    base_url = os.getenv("OPENAI_API_BASE_URL", "https://api.groq.com/openai/v1")
+    model = os.getenv("OLLAMA_EXTRACTION_MODEL", "llama3:8b")
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
     user_prompt = (
         "Extract typed medical entities and the direct relationships between them. "
@@ -61,7 +59,7 @@ def _extract_graph_elements_from_text(raw_text, source_element):
         client = OpenAI(
             api_key=api_key,
             base_url=base_url,
-            timeout=30,
+            timeout=20,
             max_retries=0,
         )
         response = client.chat.completions.create(

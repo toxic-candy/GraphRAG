@@ -10,8 +10,8 @@ async def openai_complete_if_cache(
     model, prompt, system_prompt=None, history_messages=[], **kwargs
 ) -> str:
     openai_async_client = AsyncOpenAI(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_API_BASE_URL")
+        api_key="ollama",
+        base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
     )
     hashing_kv: BaseKVStorage = kwargs.pop("hashing_kv", None)
     messages = []
@@ -40,7 +40,7 @@ async def gpt_4o_complete(
     prompt, system_prompt=None, history_messages=[], **kwargs
 ) -> str:
     return await openai_complete_if_cache(
-        "gpt-4o",
+        os.getenv("OLLAMA_ANSWER_MODEL", "qwen3:14b"),
         prompt,
         system_prompt=system_prompt,
         history_messages=history_messages,
@@ -52,7 +52,7 @@ async def gpt_4o_mini_complete(
     prompt, system_prompt=None, history_messages=[], **kwargs
 ) -> str:
     return await openai_complete_if_cache(
-        "gpt-4o-mini",
+        os.getenv("OLLAMA_SUMMARY_MODEL", "llama3:8b"),
         prompt,
         system_prompt=system_prompt,
         history_messages=history_messages,
@@ -60,13 +60,13 @@ async def gpt_4o_mini_complete(
     )
 
 
-@wrap_embedding_func_with_attrs(embedding_dim=1536, max_token_size=8192)
+@wrap_embedding_func_with_attrs(embedding_dim=768, max_token_size=8192)
 async def openai_embedding(texts: list[str]) -> np.ndarray:
     openai_async_client = AsyncOpenAI(
-        api_key=os.getenv("OPENAI_API_KEY"),
-        base_url=os.getenv("OPENAI_API_BASE_URL")
+        api_key="ollama",
+        base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
     )
     response = await openai_async_client.embeddings.create(
-        model="text-embedding-3-small", input=texts, encoding_format="float"
+        model=os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"), input=texts, encoding_format="float"
     )
     return np.array([dp.embedding for dp in response.data])

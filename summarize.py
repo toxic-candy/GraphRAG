@@ -11,18 +11,19 @@ except ImportError:
 
 
 def _client():
-    api_key = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
-    base_url = os.getenv("OPENAI_API_BASE_URL", "https://api.groq.com/openai/v1")
+    # Summarisation LLM: local Ollama
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
     return OpenAI(
-        api_key=api_key,
+        api_key="ollama",
         base_url=base_url,
-        timeout=30,
+        timeout=20,
         max_retries=0,
     )
 
 
 def _chat_model_name():
-    return os.getenv("GROQ_MODEL") or os.getenv("OPENAI_MODEL", "llama-3.3-70b-versatile")
+    # Model for summarisation.
+    return os.getenv("OLLAMA_SUMMARY_MODEL", "llama3:8b")
 
 
 sum_prompt = """
@@ -88,9 +89,6 @@ def split_into_chunks(text, tokens=500):
 
 def process_chunks(content):
     chunks = split_into_chunks(content)
-
-    if not (os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")):
-        return [_local_summary(chunk) for chunk in chunks]
 
     # Process chunks in parallel
     try:

@@ -51,7 +51,7 @@ class GraphRAG:
     node_embedding_algorithm: str = "node2vec"
     node2vec_params: dict = field(
         default_factory=lambda: {
-            "dimensions": 1536,
+            "dimensions": 768,
             "num_walks": 10,
             "walk_length": 40,
             "num_walks": 10,

@@ -7,18 +7,27 @@ neo4j:
   password: null  # Must be set via NEO4J_PASSWORD env var or CLI override
 
 embedding:
-  model: "text-embedding-3-small"
+  model: "nomic-embed-text"
   use_remote: true           # false = SHA-256 hash fallback (NOT suitable for evaluation)
-  dimension: 1536
+  dimension: 768
 
 llm:
-  model: "llama-3.3-70b-versatile"
-  api_base: "https://api.groq.com/openai/v1"
+  # Extraction and summarisation model (local Ollama).
+  # Set OLLAMA_EXTRACTION_MODEL env var to override at runtime without editing this file.
+  model: "llama3:8b"
+  api_base: "http://localhost:11434/v1"
   temperature: 0.1
   max_tokens: 500
   use_for_extraction: false  # USE_LLM_EXTRACTION
   use_for_summary: false     # USE_LLM_SUMMARY
   use_for_answer: false      # USE_LLM_ANSWER
+
+answer_model:
+  # Final answer generation model (local Ollama).
+  # Configured independently of the extraction/summarisation LLM.
+  # Set OLLAMA_ANSWER_MODEL env var to override at runtime.
+  model: "qwen3:14b"
+  api_base: "http://localhost:11434/v1"
 
 
 retrieval:

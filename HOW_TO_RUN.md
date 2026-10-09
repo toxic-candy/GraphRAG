@@ -7,36 +7,41 @@ This guide provides step-by-step instructions to execute the entire implemented 
 ## 1. Environment Setup
 
 ### 1.1 Activate Virtual Environment
-```bash
-# If .venv exists
-source .venv/bin/activate
-
-# Or recreate and install dependencies
-python3 -m venv .venv
-source .venv/bin/activate
+```powershell
+# Recreate and install dependencies on Windows
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 pip install pyyaml neo4j requests numpy pydantic pytest tiktoken anthropic pillow unstructured openai python-dotenv pandas
 ```
 
-### 1.2 Configure Groq API (Free Tier) & Environment Variables
-Copy `.env.example` to `.env` (already done) and put your free Groq API key:
-```bash
+### 1.2 Configure Local Ollama & Environment Variables
+Copy `.env.example` to `.env` (already done) and ensure Ollama is running at `http://localhost:11434`.
+```powershell
 # In .env:
-GROQ_API_KEY=gsk_your_key_here
-GROQ_MODEL=llama-3.3-70b-versatile
+OLLAMA_BASE_URL=http://localhost:11434/v1
+OLLAMA_EXTRACTION_MODEL=llama3:8b
+OLLAMA_SUMMARY_MODEL=llama3:8b
+OLLAMA_ANSWER_MODEL=qwen3:14b
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
 USE_LLM_ANSWER=1
 ```
 
-Get a free key instantly at [https://console.groq.com/keys](https://console.groq.com/keys).
+Ensure you have downloaded the required models in Ollama:
+```powershell
+ollama pull llama3:8b
+ollama pull qwen3:14b
+ollama pull nomic-embed-text
+```
 
 ### 1.3 Start Neo4j (Local Docker)
-```bash
-docker rm -f medpneu-neo4j >/dev/null 2>&1 || true
-docker run -d \
-  --name medpneu-neo4j \
-  -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/test1234 \
-  -e NEO4J_PLUGINS='["apoc"]' \
+```powershell
+docker rm -f medpneu-neo4j 2>$null
+docker run -d `
+  --name medpneu-neo4j `
+  -p 7474:7474 -p 7687:7687 `
+  -e NEO4J_AUTH=neo4j/test1234 `
+  -e NEO4J_PLUGINS='[\"apoc\"]' `
   neo4j:5
 ```
 
@@ -133,11 +138,24 @@ python post_graph_inference.py \
 
 ---
 
-## 7. Run Automated Test Suite
+### 7.1 Start API and UI Servers
+You can run the API backend and the Vite UI via the PowerShell script:
+```powershell
+.\start_servers.ps1
+```
+The API server will run at http://localhost:5001 and the UI at http://localhost:5173.
+To stop them:
+```powershell
+.\start_servers.ps1 -Stop
+```
+
+---
+
+## 8. Run Automated Test Suite
 
 Execute the full pytest suite verifying data structures, provenance tagging, candidate path exploration, confidence scoring, and edge cases:
-```bash
-.venv/bin/pytest -v tests/
+```powershell
+.\.venv\Scripts\pytest.exe -v tests/
 ```
 
 All 7 test cases will execute:

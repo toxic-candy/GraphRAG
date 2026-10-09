@@ -25,22 +25,39 @@ Modify the response to the question using the provided references. Include preci
 
 
 def _client():
-    api_key = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
-    base_url = os.getenv("OPENAI_API_BASE_URL", "https://api.groq.com/openai/v1")
+    # Extraction / summarisation LLM: uses local Ollama by default.
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
     return OpenAI(
-        api_key=api_key,
+        api_key="ollama", # Ollama ignores this, but openai client requires it
+        base_url=base_url,
+        timeout=20,
+        max_retries=0,
+    )
+
+
+def _chat_model_name():
+    # Model for extraction.
+    return os.getenv("OLLAMA_EXTRACTION_MODEL", "llama3:8b")
+
+
+def _answer_client():
+    """Separate client for final answer generation. Uses local Ollama by default."""
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    return OpenAI(
+        api_key="ollama",
         base_url=base_url,
         timeout=30,
         max_retries=0,
     )
 
 
-def _chat_model_name():
-    return os.getenv("GROQ_MODEL") or os.getenv("OPENAI_MODEL", "llama-3.3-70b-versatile")
+def _answer_model_name():
+    """Model used for final answer generation. Defaults to qwen3:14b."""
+    return os.getenv("OLLAMA_ANSWER_MODEL", "qwen3:14b")
 
 
 def _embedding_model_name():
-    return os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+    return os.getenv("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
 
 
 class _HardTimeoutError(TimeoutError):
@@ -176,16 +193,30 @@ def add_sum(n4j,content,gid):
 
     return s
 
-def call_llm(sys, user, _retries: int = 3):
+def call_llm(sys, user, _retries: int = 3, _use_answer_model: bool = False):
+    """Call the configured LLM.
+
+    Args:
+        sys: System prompt.
+        user: User prompt.
+        _retries: Number of retry attempts on transient network errors.
+        _use_answer_model: When True, uses the GPT-4o answer client instead of
+            the extraction/summarisation LLM.  Only set by get_response().
+    """
     import time
     last_err = None
     for attempt in range(1, _retries + 1):
         try:
-            client = _client()
+            if _use_answer_model:
+                client = _answer_client()
+                model = _answer_model_name()
+            else:
+                client = _client()
+                model = _chat_model_name()
             response = _run_with_hard_timeout(
                 45,
                 client.chat.completions.create,
-                model=_chat_model_name(),
+                model=model,
                 messages=[
                     {"role": "system", "content": sys},
                     {"role": "user", "content": f" {user}"},
@@ -214,9 +245,10 @@ def get_response(n4j, gid, query):
     selfcont = ret_context(n4j, gid)
     linkcont = link_context(n4j, gid)
     user_one = "the question is: " + query + "the provided information is:" +  "".join(selfcont)
-    res = call_llm(sys_prompt_one,user_one)
+    # Final-answer calls use the GPT-4o answer model (independent of extraction LLM).
+    res = call_llm(sys_prompt_one, user_one, _use_answer_model=True)
     user_two = "the question is: " + query + "the last response of it is:" +  res + "the references are: " +  "".join(linkcont)
-    res = call_llm(sys_prompt_two,user_two)
+    res = call_llm(sys_prompt_two, user_two, _use_answer_model=True)
     return res
 
 def link_context(n4j, gid):
@@ -372,10 +404,10 @@ def load_yaml_config(config_path, override_env=False):
             ("neo4j", "uri"): "NEO4J_URI",
             ("neo4j", "username"): "NEO4J_USERNAME",
             ("neo4j", "password"): "NEO4J_PASSWORD",
-            ("embedding", "model"): "OPENAI_EMBEDDING_MODEL",
+            ("embedding", "model"): "OLLAMA_EMBEDDING_MODEL",
             ("embedding", "use_remote"): "USE_REMOTE_EMBEDDINGS",
-            ("llm", "model"): "OPENAI_MODEL",
-            ("llm", "api_base"): "OPENAI_API_BASE_URL",
+            ("llm", "model"): "OLLAMA_EXTRACTION_MODEL",
+            ("llm", "api_base"): "OLLAMA_BASE_URL",
             ("llm", "use_for_extraction"): "USE_LLM_EXTRACTION",
             ("llm", "use_for_summary"): "USE_LLM_SUMMARY",
             ("llm", "use_for_answer"): "USE_LLM_ANSWER",
