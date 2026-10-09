@@ -1,44 +1,45 @@
 ### Step 1: Create and activate environment
 
-```bash
+```powershell
 python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt 2>/dev/null || true
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 pip install requests neo4j pandas
 ```
 
 ### Step 2: Start Neo4j (local Docker)
 
-```bash
-docker rm -f medpneu-neo4j >/dev/null 2>&1 || true
-docker run -d \
-  --name medpneu-neo4j \
-  -p 7474:7474 -p 7687:7687 \
-  -e NEO4J_AUTH=neo4j/test1234 \
-  -e NEO4J_PLUGINS='["apoc"]' \
+```powershell
+docker rm -f medpneu-neo4j 2>$null
+docker run -d `
+  --name medpneu-neo4j `
+  -p 7474:7474 -p 7687:7687 `
+  -e NEO4J_AUTH=neo4j/test1234 `
+  -e NEO4J_PLUGINS='[\"apoc\"]' `
   neo4j:5
 ```
 
 Wait until ready:
 
-```bash
-for i in $(seq 1 30); do
-  if docker logs medpneu-neo4j 2>&1 | rg -q 'Bolt enabled on|Started|Remote interface available'; then
-    echo NEO4J_READY
-    break
-  fi
-  sleep 2
-done
+```powershell
+for ($i = 1; $i -le 30; $i++) {
+    $logs = docker logs medpneu-neo4j 2>&1
+    if ($logs -match 'Bolt enabled on|Started|Remote interface available') {
+        Write-Host 'NEO4J_READY'
+        break
+    }
+    Start-Sleep -Seconds 2
+}
 ```
 
 ### Step 3: Prepare top-layer report text from MIMIC demo
 
 Generate patient report text files used as top-layer documents:
 
-```bash
-python preprocess_mimic_demo.py \
-  --mimic-root ./mimic-iv-3.1-pneumonia-100 \
-  --output-dir ./dataset/mimic_demo_100_pneumonia \
+```powershell
+python preprocess_mimic_demo.py `
+  --mimic-root ./mimic-iv-3.1-pneumonia-100 `
+  --output-dir ./dataset/mimic_demo_100_pneumonia `
   --n-patients 100
 ```
 
@@ -49,10 +50,10 @@ This builds:
 2. Middle layer guideline/knowledge chunks
 3. Top layer files copied from ./dataset/mimic_demo_10
 
-```bash
-python prepare_three_layer_data.py \
-  --repo-root . \
-  --top-path ./dataset/mimic_demo_100_pneumonia \
+```powershell
+python prepare_three_layer_data.py `
+  --repo-root . `
+  --top-path ./dataset/mimic_demo_100_pneumonia `
   --out-root ./dataset/three_layer
 ```
 
@@ -64,16 +65,17 @@ Expected directories:
 ### Step 5: Run complete three-layer graph construction
 
 
-```bash
-USE_LLM_EXTRACTION=1 \
-USE_LLM_SUMMARY=1 \
-USE_REMOTE_EMBEDDINGS=1 \
-python three_layer_import.py \
-  --neo4j-password test1234 \
-  --clear \
-  --bottom ./dataset/three_layer/bottom \
-  --middle ./dataset/three_layer/middle \
-  --top ./dataset/three_layer/top \
+```powershell
+$env:USE_LLM_EXTRACTION="1"
+$env:USE_LLM_SUMMARY="1"
+$env:USE_REMOTE_EMBEDDINGS="1"
+
+python three_layer_import.py `
+  --neo4j-password test1234 `
+  --clear `
+  --bottom ./dataset/three_layer/bottom `
+  --middle ./dataset/three_layer/middle `
+  --top ./dataset/three_layer/top `
   --trinity
 ```
 
@@ -176,23 +178,21 @@ RETURN count(s) AS total_summaries
 
 After graph construction, run layered retrieval + answer generation over the built three-layer graph:
 
-```bash
-python post_graph_inference.py \
-  --neo4j-password test1234 \
-  --question "What are the major clinical problems and likely interventions for this patient?" \
-  --top-k 2 \
+```powershell
+python post_graph_inference.py `
+  --neo4j-password test1234 `
+  --question "What are the major clinical problems and likely interventions for this patient?" `
+  --top-k 2 `
   --max-hops 2
 ```
 
 Or use a prompt file:
 
-```bash
-cat > prompt.txt << 'EOF'
-What are the main symptoms, likely diagnoses, and recommended treatment directions?
-EOF
+```powershell
+Set-Content -Path prompt.txt -Value "What are the main symptoms, likely diagnoses, and recommended treatment directions?"
 
-python post_graph_inference.py \
-  --neo4j-password test1234 \
+python post_graph_inference.py `
+  --neo4j-password test1234 `
   --question-file ./prompt.txt
 ```
 
@@ -245,24 +245,26 @@ APOC or GDS function missing warnings:
 
 No space left on device:
 
-```bash
+```powershell
 docker system prune -af
 docker volume prune -f
-df -h
 ```
 
 ### One-command reference run
 
 After prerequisites are done, this is the single command most users need for full graph construction:
 
-```bash
-USE_LLM_EXTRACTION=0 USE_LLM_SUMMARY=0 USE_REMOTE_EMBEDDINGS=0 \
-python three_layer_import.py \
-  --neo4j-password test1234 \
-  --clear \
-  --bottom ./dataset/three_layer/bottom \
-  --middle ./dataset/three_layer/middle \
-  --top ./dataset/three_layer/top \
+```powershell
+$env:USE_LLM_EXTRACTION="0"
+$env:USE_LLM_SUMMARY="0"
+$env:USE_REMOTE_EMBEDDINGS="0"
+
+python three_layer_import.py `
+  --neo4j-password test1234 `
+  --clear `
+  --bottom ./dataset/three_layer/bottom `
+  --middle ./dataset/three_layer/middle `
+  --top ./dataset/three_layer/top `
   --trinity
 ```
 
