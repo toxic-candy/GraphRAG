@@ -1,11 +1,4 @@
 """
-convert_xml_to_txt.py
----------------------
-Standalone one-shot converter: PMC JATS XML → plain-text .txt files.
-
-This script is NOT part of the pipeline. Run it once (or whenever the XML
-corpus is updated) to produce the .txt files that the pipeline reads.
-
 Usage
 -----
   # Defaults: reads  middle-layer/pneumonia_corpus/xml/
@@ -26,10 +19,6 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-
-# ---------------------------------------------------------------------------
-# XML helpers
-# ---------------------------------------------------------------------------
 
 def _xml_text(elem) -> str:
     """Recursively collect all text content from an XML element, skipping tags."""
@@ -54,11 +43,9 @@ def extract_pmc_xml(xml_path: Path) -> str | None:
 
     root = tree.getroot()
 
-    # ---- title ----
     title_elem = root.find(".//article-title")
     title = re.sub(r"\s+", " ", _xml_text(title_elem)) if title_elem is not None else ""
 
-    # ---- abstract ----
     abstract_parts: list[str] = []
     for abs_elem in root.findall(".//abstract"):
         if abs_elem.get("abstract-type", "") in ("graphical", "toc"):
@@ -66,7 +53,6 @@ def extract_pmc_xml(xml_path: Path) -> str | None:
         abstract_parts.append(re.sub(r"\s+", " ", _xml_text(abs_elem)))
     abstract = " ".join(abstract_parts)
 
-    # ---- body sections ----
     body_parts: list[str] = []
     body = root.find(".//body")
     if body is not None:
@@ -77,7 +63,6 @@ def extract_pmc_xml(xml_path: Path) -> str | None:
                 if sec_title_elem is not None
                 else ""
             )
-            # Only direct <p> children — avoids duplicating text from nested secs
             paras = [
                 re.sub(r"\s+", " ", _xml_text(child))
                 for child in sec
@@ -88,7 +73,6 @@ def extract_pmc_xml(xml_path: Path) -> str | None:
                     (f"{sec_title}: " if sec_title else "") + " ".join(paras)
                 )
 
-    # ---- assemble ----
     parts: list[str] = []
     if title:
         parts.append(f"Title: {title}")
@@ -100,10 +84,6 @@ def extract_pmc_xml(xml_path: Path) -> str | None:
     full_text = "\n\n".join(parts)
     return full_text if len(full_text) >= 200 else None
 
-
-# ---------------------------------------------------------------------------
-# Conversion driver
-# ---------------------------------------------------------------------------
 
 def convert_all(xml_dir: Path, txt_dir: Path, max_files: int | None = None, min_chars: int = 500) -> None:
     """
@@ -171,9 +151,6 @@ def convert_all(xml_dir: Path, txt_dir: Path, max_files: int | None = None, min_
           f"  skipped_short={skipped_short}  skipped_error={skipped_error}")
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
 
 def main() -> None:
     parser = argparse.ArgumentParser(

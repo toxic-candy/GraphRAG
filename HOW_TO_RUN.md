@@ -48,17 +48,20 @@ docker run -d \
 
 ### Step 2.1: Preprocess MIMIC-IV Clinical Data into Patient Reports
 ```bash
+python convert_xml_to_txt.py
+
 python preprocess_mimic_demo.py \
   --mimic-root ./mimic-iv-3.1-pneumonia-100 \
-  --output-dir ./dataset/mimic_demo_10_pneumonia \
-  --n-patients 10
+  --output-dir ./dataset/mimic_demo_100_pneumonia \
+  --n-patients 100
 ```
 
 ### Step 2.2: Build the Three-Layer Text Hierarchy (Bottom / Middle / Top)
 ```bash
 python prepare_three_layer_data.py \
   --repo-root . \
-  --top-path ./dataset/mimic_demo_10_pneumonia \
+  --top-path ./dataset/mimic_demo_100_pneumonia \
+  --middle-txt-dir middle-layer/pneumonia_corpus/txt \
   --out-root ./dataset/three_layer
 ```
 Expected output folders:
