@@ -66,77 +66,78 @@ def build_bottom_layer(mimic_root: Path, out_dir: Path, max_files: int = 12) -> 
 
 
 def build_middle_layer(
-    repo_root: Path,
+    txt_dir: Path,
     out_dir: Path,
-    mimic_root: Path | None = None,
-    max_files: int = 12,
+    max_files: int | None = None,
 ) -> int:
+    """
+    Build the middle layer by copying pre-converted PMC paper .txt files into
+    the pipeline's middle-layer staging directory.
+
+    The .txt files must already exist — run ``convert_xml_to_txt.py`` first.
+
+    Args:
+        txt_dir:   Directory containing pre-converted .txt files
+                   (default: middle-layer/pneumonia_corpus/txt/).
+        out_dir:   Destination directory for middle-layer files consumed by the pipeline.
+        max_files: Maximum number of files to stage. None means all available.
+
+    Returns:
+        Number of files staged.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    if not txt_dir.exists():
+        print(f"[middle layer] ERROR: txt directory not found: {txt_dir}")
+        print(f"[middle layer] Run 'python convert_xml_to_txt.py' first to generate .txt files.")
+        return 0
+
+    txt_files = sorted(txt_dir.glob("*.txt"))
+    if not txt_files:
+        print(f"[middle layer] ERROR: No .txt files found in {txt_dir}")
+        print(f"[middle layer] Run 'python convert_xml_to_txt.py' first to generate .txt files.")
+        return 0
+
+    print(f"[middle layer] Found {len(txt_files)} pre-converted .txt files in {txt_dir}")
+
     files_written = 0
+    for src in txt_files:
+        if max_files is not None and files_written >= max_files:
+            break
+        dst = out_dir / f"middle_{files_written:03d}_{src.name}"
+        dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+        files_written += 1
 
-    # Source 1: MedicalBook.xlsx sheets (if available and readable).
-    book_path = repo_root / "MedicalBook.xlsx"
-    if book_path.exists() and files_written < max_files:
-        try:
-            xl = pd.ExcelFile(book_path)
-            for sheet in xl.sheet_names:
-                if files_written >= max_files:
-                    break
-                df = xl.parse(sheet)
-                lines = []
-                for _, row in df.head(400).iterrows():
-                    vals = [str(v).strip() for v in row.tolist() if str(v).strip() and str(v).strip() != "nan"]
-                    if vals:
-                        lines.append(" | ".join(vals))
-                if lines:
-                    p = out_dir / f"middle_{files_written:02d}_{sheet.replace(' ', '_')}.txt"
-                    p.write_text(
-                        f"medical knowledge source sheet={sheet}\n" + "\n".join(lines) + "\n",
-                        encoding="utf-8",
-                    )
-                    files_written += 1
-        except Exception:
-            pass
-
-    # Source 2 fallback: derive guideline-like text from MIMIC dictionaries.
-    if files_written < max_files:
-        if mimic_root is None:
-            candidate = repo_root / "mimic-iv-3.1-pneumonia-100"
-            mimic_root = candidate if candidate.exists() else (repo_root / "mimic-iv-clinical-database-demo-2.2")
-        hosp = mimic_root / "hosp"
-        d_icd_diag = pd.read_csv(hosp / "d_icd_diagnoses.csv")
-        d_icd_proc = pd.read_csv(hosp / "d_icd_procedures.csv")
-
-        d = d_icd_diag["long_title"].dropna().astype(str).head(1500).tolist()
-        p = d_icd_proc["long_title"].dropna().astype(str).head(1000).tolist()
-
-        # Chunk into guideline-like documents.
-        step = 250
-        for i in range(0, min(len(d), 1000), step):
-            if files_written >= max_files:
-                break
-            diag_chunk = d[i : i + step]
-            proc_chunk = p[i : i + step]
-            lines = ["clinical guideline style notes:"]
-            for j, t in enumerate(diag_chunk[:120], 1):
-                lines.append(f"Condition {j}: Consider diagnosis '{t}'.")
-            for j, t in enumerate(proc_chunk[:120], 1):
-                lines.append(f"Intervention {j}: Procedure option '{t}'.")
-            out = out_dir / f"middle_{files_written:02d}_guideline_chunk.txt"
-            out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            files_written += 1
-
+    print(f"[middle layer] Staged {files_written} files → {out_dir}")
     return files_written
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Prepare local bottom/middle/top layer text datasets")
+    parser = argparse.ArgumentParser(
+        description="Prepare local bottom/middle/top layer text datasets for the pipeline.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument(
         "--mimic-root",
         type=Path,
         default=None,
-        help="Path to MIMIC dataset root directory (defaults to mimic-iv-3.1-pneumonia-100 or demo-2.2)",
+        help="Path to MIMIC dataset root (defaults to mimic-iv-3.1-pneumonia-100 or demo-2.2).",
+    )
+    parser.add_argument(
+        "--middle-txt-dir",
+        type=Path,
+        default=Path("middle-layer/pneumonia_corpus/txt"),
+        help=(
+            "Directory containing pre-converted PMC .txt files for the middle layer. "
+            "Run 'python convert_xml_to_txt.py' first to populate this directory."
+        ),
+    )
+    parser.add_argument(
+        "--max-middle",
+        type=int,
+        default=None,
+        help="Maximum number of middle-layer files to stage into the pipeline. Default: all available.",
     )
     parser.add_argument("--top-path", type=Path, default=Path("dataset/mimic_demo_10"))
     parser.add_argument("--out-root", type=Path, default=Path("dataset/three_layer"))
@@ -154,8 +155,10 @@ def main() -> None:
         candidate = repo_root / "mimic-iv-3.1-pneumonia-100"
         mimic_root = candidate if candidate.exists() else (repo_root / "mimic-iv-clinical-database-demo-2.2")
 
+    txt_dir = args.middle_txt_dir if args.middle_txt_dir.is_absolute() else (repo_root / args.middle_txt_dir).resolve()
+
     bottom_n = build_bottom_layer(mimic_root, bottom_dir)
-    middle_n = build_middle_layer(repo_root, middle_dir, mimic_root=mimic_root)
+    middle_n = build_middle_layer(txt_dir, middle_dir, max_files=args.max_middle)
 
     top_dir.mkdir(parents=True, exist_ok=True)
     top_n = 0
