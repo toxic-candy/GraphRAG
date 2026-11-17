@@ -65,7 +65,12 @@ def build_bottom_layer(mimic_root: Path, out_dir: Path, max_files: int = 12) -> 
     return files_written
 
 
-def build_middle_layer(repo_root: Path, out_dir: Path, max_files: int = 12) -> int:
+def build_middle_layer(
+    repo_root: Path,
+    out_dir: Path,
+    mimic_root: Path | None = None,
+    max_files: int = 12,
+) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     files_written = 0
 
@@ -95,7 +100,10 @@ def build_middle_layer(repo_root: Path, out_dir: Path, max_files: int = 12) -> i
 
     # Source 2 fallback: derive guideline-like text from MIMIC dictionaries.
     if files_written < max_files:
-        hosp = repo_root / "mimic-iv-clinical-database-demo-2.2" / "hosp"
+        if mimic_root is None:
+            candidate = repo_root / "mimic-iv-3.1-pneumonia-100"
+            mimic_root = candidate if candidate.exists() else (repo_root / "mimic-iv-clinical-database-demo-2.2")
+        hosp = mimic_root / "hosp"
         d_icd_diag = pd.read_csv(hosp / "d_icd_diagnoses.csv")
         d_icd_proc = pd.read_csv(hosp / "d_icd_procedures.csv")
 
@@ -124,6 +132,12 @@ def build_middle_layer(repo_root: Path, out_dir: Path, max_files: int = 12) -> i
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare local bottom/middle/top layer text datasets")
     parser.add_argument("--repo-root", type=Path, default=Path("."))
+    parser.add_argument(
+        "--mimic-root",
+        type=Path,
+        default=None,
+        help="Path to MIMIC dataset root directory (defaults to mimic-iv-3.1-pneumonia-100 or demo-2.2)",
+    )
     parser.add_argument("--top-path", type=Path, default=Path("dataset/mimic_demo_10"))
     parser.add_argument("--out-root", type=Path, default=Path("dataset/three_layer"))
     args = parser.parse_args()
@@ -134,8 +148,14 @@ def main() -> None:
     middle_dir = out_root / "middle"
     top_dir = out_root / "top"
 
-    bottom_n = build_bottom_layer(repo_root / "mimic-iv-clinical-database-demo-2.2", bottom_dir)
-    middle_n = build_middle_layer(repo_root, middle_dir)
+    if args.mimic_root is not None:
+        mimic_root = args.mimic_root if args.mimic_root.is_absolute() else (repo_root / args.mimic_root).resolve()
+    else:
+        candidate = repo_root / "mimic-iv-3.1-pneumonia-100"
+        mimic_root = candidate if candidate.exists() else (repo_root / "mimic-iv-clinical-database-demo-2.2")
+
+    bottom_n = build_bottom_layer(mimic_root, bottom_dir)
+    middle_n = build_middle_layer(repo_root, middle_dir, mimic_root=mimic_root)
 
     top_dir.mkdir(parents=True, exist_ok=True)
     top_n = 0

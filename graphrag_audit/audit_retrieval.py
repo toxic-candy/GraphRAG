@@ -59,7 +59,7 @@ class AuditableRetriever:
 
         # 2. Discover and score seed candidates
         all_seed_candidates = self._identify_seed_candidates(query_embedding, patient_id=patient_id)
-        
+
         # Determine top seed GIDs
         selected_seed_gids = [
             s["gid"] for s in all_seed_candidates if s.get("status") == "selected"
@@ -159,6 +159,31 @@ class AuditableRetriever:
         the query, and logs both selected and rejected candidates.
         """
         candidates = []
+
+        if patient_id:
+            patient_query = """
+                MATCH (p)
+                WHERE p.id = $patient_id OR p.gid = $patient_id
+                RETURN DISTINCT p.gid AS gid, labels(p)[0] AS label, p.id AS id
+                LIMIT 20
+            """
+            try:
+                patient_rows = self.driver.query(patient_query, {"patient_id": patient_id})
+            except TypeError:
+                patient_rows = self.driver.query(patient_query)
+
+            for row in patient_rows:
+                gid = row.get("gid")
+                if not gid:
+                    continue
+                candidates.append({
+                    "gid": gid,
+                    "type": row.get("label", "Patient"),
+                    "preview": f"Patient {patient_id}",
+                    "score": 1.0,
+                    "status": "selected",
+                    "rejection_reason": None,
+                })
 
         # Check for Summary nodes in Neo4j
         summary_query = """
@@ -440,7 +465,7 @@ class AuditableRetriever:
         """
         selected = []
         rejected = []
-        path_budget = min(self.top_k * 4, 15)
+        path_budget = min(self.top_k * 4, 20)
 
         for rank, path in enumerate(scored_paths, 1):
             if rank <= path_budget and path.path_score >= self.min_confidence_threshold:

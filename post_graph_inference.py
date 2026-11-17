@@ -63,6 +63,54 @@ def _question_summary(question: str):
     return [question[:1500]]
 
 
+def _extract_patient_id(question: str):
+    """Normalize a patient ID appearing in natural-language questions.
+
+    Examples matched:
+      - what is the diagnosis for id: "patient_10457410"
+      - diagnosis for patient_10457410
+      - patient 10457410
+    """
+    if not question:
+        return None
+
+    patterns = [
+        r"(?i)\b(?:patient_id|id)\s*[:=]\s*[\"']?(?:patient[_\-\s]*)?(\d{5,})[\"']?",
+        r"(?i)\bpatient[_\-\s]*(\d{5,})\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, question)
+        if match:
+            return f"patient_{match.group(1)}"
+    return None
+
+
+def _patient_seed_gids(n4j, patient_id: str | None):
+    if not patient_id:
+        return []
+
+    try:
+        rows = n4j.query(
+            """
+            MATCH (p)
+            WHERE p.id = $patient_id OR p.gid = $patient_id
+            RETURN DISTINCT p.gid AS gid, labels(p)[0] AS label, p.id AS id
+            LIMIT 20
+            """,
+            {"patient_id": patient_id},
+        )
+    except TypeError:
+        rows = n4j.query(
+            """
+            MATCH (p)
+            WHERE p.id = $patient_id OR p.gid = $patient_id
+            RETURN DISTINCT p.gid AS gid, labels(p)[0] AS label, p.id AS id
+            LIMIT 20
+            """
+        )
+    return [row["gid"] for row in rows if row.get("gid")]
+
+
 def _neighbor_gids(n4j, seed_gid: str, max_hops: int = 2, max_items: int = 20):
     hop = max(1, min(4, int(max_hops)))
     query = f"""
@@ -77,7 +125,62 @@ def _neighbor_gids(n4j, seed_gid: str, max_hops: int = 2, max_items: int = 20):
     return [r["gid"] for r in rows if r.get("gid")]
 
 
-def _collect_evidence(n4j, gids, max_evidence: int = 120):
+def _filter_patient_evidence(n4j, evidence, patient_id: str | None, max_evidence: int = 120):
+    """Keep only evidence that is actually connected to the patient graph, not just text snippets."""
+    if not patient_id:
+        return evidence[:max_evidence]
+
+    try:
+        connected = n4j.query(
+            """
+            MATCH (p {id: $patient_id})
+            MATCH (p)-[*1..5]-(n)
+            RETURN DISTINCT n.id AS node_id, coalesce(n.description, '') AS description
+            """,
+            {"patient_id": patient_id},
+        )
+    except Exception:
+        connected = []
+
+    valid_node_ids = set()
+    valid_descriptions = set()
+    for row in connected:
+        node_id = str(row.get("node_id") or "").strip()
+        desc = str(row.get("description") or "").strip()
+        if node_id:
+            valid_node_ids.add(node_id.lower())
+        if desc:
+            valid_descriptions.add(desc.lower())
+
+    filtered = []
+    seen = set()
+    for item in evidence:
+        content = item.get("content") if isinstance(item, dict) else str(item)
+        if not content:
+            continue
+
+        lower = content.lower()
+        related = any(
+            token.lower() in lower for token in sorted(valid_node_ids | valid_descriptions)
+        ) or any(
+            term in lower for term in (patient_id.lower(), "diagnosed_with", "has_condition", "treats", "monitors", "performed_for")
+        )
+
+        if not related:
+            continue
+
+        key = content.strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        filtered.append(item)
+        if len(filtered) >= max_evidence:
+            break
+
+    return filtered
+
+
+def _collect_evidence(n4j, gids, max_evidence: int = 120, patient_id: str | None = None):
     evidence = []
     seen = set()
 
@@ -89,10 +192,60 @@ def _collect_evidence(n4j, gids, max_evidence: int = 120):
             if not clean or clean in seen:
                 continue
             seen.add(clean)
-            evidence.append(clean)
+            evidence.append({"id": f"E{len(evidence)+1}", "content": clean})
             if len(evidence) >= max_evidence:
-                return evidence
-    return evidence
+                return _filter_patient_evidence(n4j, evidence, patient_id, max_evidence=max_evidence)
+
+    return _filter_patient_evidence(n4j, evidence, patient_id, max_evidence=max_evidence)
+
+
+def _is_medication_question(question: str) -> bool:
+    q = (question or "").lower()
+    return any(term in q for term in [
+        "drug", "drugs", "medication", "medications", "medicine", "prescribed",
+        "given", "administered", "treatment", "therapy", "meds", "antibiotic",
+        "what was given", "what drugs"
+    ])
+
+
+def _build_grounded_response(question: str, evidence, fallback_response: str | None = None) -> str:
+    """Construct a grounded response from evidence when the question asks about medications or treatments."""
+    if not evidence or not _is_medication_question(question):
+        return fallback_response or ""
+
+    entries = []
+    seen = set()
+    for item in evidence:
+        content = item.get("content") if isinstance(item, dict) else str(item)
+        if not content:
+            continue
+        lower = content.lower()
+        if not any(token in lower for token in [
+            "mg", "ml", "iv", "po", "oral", "tablet", "capsule",
+            "flush", "solution", "medication", "drug", "prescribed",
+            "administered", "given", "dose", "antibiotic", "infusion"
+        ]):
+            continue
+
+        entry = content.strip()
+        if entry in seen:
+            continue
+        seen.add(entry)
+        entries.append(entry)
+
+    if not entries:
+        return fallback_response or ""
+
+    citations = []
+    for item in evidence:
+        content = item.get("content") if isinstance(item, dict) else str(item)
+        if content in entries:
+            citations.append(f"[{item['id']}]" if isinstance(item, dict) and 'id' in item else "[E]")
+
+    meds_text = "; ".join(entries[:8])
+    if citations:
+        return f"The medications explicitly recorded in the connected patient evidence are: {meds_text}. { ' '.join(citations[:len(entries)]) }"
+    return f"The medications explicitly recorded in the connected patient evidence are: {meds_text}."
 
 
 def _answer_with_citations(question: str, evidence):
@@ -109,9 +262,13 @@ def _answer_with_citations(question: str, evidence):
             f"Question: {question}\n\n"
             "Evidence:\n"
             + "\n".join(numbered)
-            + "\n\nPlease answer using only the evidence above and include [E#] citations."
+            + "\n\nPlease answer using only the evidence above and include [E#] citations. For medication/treatment questions, list every medication or treatment from the evidence explicitly and do not omit supported items."
         )
-        return call_llm(POST_SYS_PROMPT, user_prompt)
+        answer = call_llm(POST_SYS_PROMPT, user_prompt)
+        grounded = _build_grounded_response(question, evidence, fallback_response=answer)
+        if grounded:
+            return grounded
+        return answer
 
     def _fmt(raw: str) -> str:
         # Insert spaces around ALL-CAPS relationship tokens, e.g. CAUSES -> --CAUSES-->
@@ -172,6 +329,8 @@ def main():
         password=args.neo4j_password,
     )
 
+    patient_id = _extract_patient_id(question)
+
     if args.audit:
         from graphrag_audit import AuditableRetriever
         retriever = AuditableRetriever(
@@ -182,7 +341,7 @@ def main():
                 "max_evidence": args.max_evidence,
             }
         )
-        audit_res = retriever.retrieve(query=question)
+        audit_res = retriever.retrieve(query=question, patient_id=patient_id)
         evidence = audit_res.evidence
         answer = _answer_with_citations(question, evidence) if evidence else "No evidence retrieved."
 
@@ -224,15 +383,21 @@ def main():
 
     q_summary = _question_summary(question)
     seed_gids = select_top_gids(n4j, q_summary, top_k=max(1, args.top_k))
+    patient_seed_gids = _patient_seed_gids(n4j, patient_id)
 
-    expanded_gids = list(seed_gids)
+    expanded_gids = list(dict.fromkeys(patient_seed_gids + list(seed_gids)))
     for gid in seed_gids:
         expanded_gids.extend(_neighbor_gids(n4j, gid, max_hops=args.max_hops, max_items=20))
+    for gid in patient_seed_gids:
+        expanded_gids.extend(_neighbor_gids(n4j, gid, max_hops=args.max_hops, max_items=20))
+
+    expanded_gids = list(dict.fromkeys(expanded_gids))
 
     # Preserve order while deduplicating.
     ordered_unique_gids = list(dict.fromkeys([g for g in expanded_gids if g]))
 
-    evidence = _collect_evidence(n4j, ordered_unique_gids, max_evidence=max(10, args.max_evidence))
+    patient_id = _extract_patient_id(question)
+    evidence = _collect_evidence(n4j, ordered_unique_gids, max_evidence=max(10, args.max_evidence), patient_id=patient_id)
     if not evidence:
         print("No evidence retrieved from graph. Check graph construction and REFERENCE links.")
         return

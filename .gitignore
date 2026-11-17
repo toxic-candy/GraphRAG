@@ -37,3 +37,8 @@ nano_graphrag_cache_*/
 nanotest/
 
 mimic-iv-3.1-pneumonia-100/
+
+middle/
+middle-layer/
+QA_Test/
+questions.txt

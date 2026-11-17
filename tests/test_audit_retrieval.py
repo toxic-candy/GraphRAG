@@ -5,6 +5,7 @@ Verifies candidate path construction, confidence scoring, alternative path rejec
 
 import pytest
 import json
+from post_graph_inference import _filter_patient_evidence, _build_grounded_response
 from graphrag_audit import (
     CandidateNode,
     CandidateEdge,
@@ -217,6 +218,88 @@ def test_auditable_retriever_empty_graph():
     assert result.rejected_paths == []
     assert result.evidence == []
     assert "Retriever evaluated 0" in result.decision_rationale
+
+
+def test_patient_id_is_prioritized_for_patient_specific_queries():
+    """Patient-specific queries should resolve and prioritize the matching patient node."""
+    class PatientMockNeo4jDriver(MockNeo4jDriver):
+        def __init__(self):
+            super().__init__(
+                summary_rows=[
+                    {
+                        "gid": "gid_general_01",
+                        "content": ["General medical summary unrelated to this patient."],
+                    },
+                    {
+                        "gid": "gid_patient_10457410",
+                        "content": ["Patient 10457410 diagnosed with acute bacterial pneumonia."],
+                    },
+                ]
+            )
+
+        def query(self, cypher: str, params: dict = None):
+            cypher_clean = cypher.strip()
+            if "WHERE p.id = $patient_id" in cypher_clean:
+                return [{
+                    "gid": "gid_patient_10457410",
+                    "label": "Patient",
+                    "id": "patient_10457410",
+                }]
+            return super().query(cypher, params)
+
+    retriever = AuditableRetriever(
+        driver=PatientMockNeo4jDriver(),
+        config={"retrieval": {"top_k": 2, "max_hops": 1, "max_evidence": 20, "min_confidence_threshold": 0.0}},
+    )
+
+    result = retriever.retrieve(query='What is the diagnosis for id: "patient_10457410"', patient_id="patient_10457410")
+
+    assert any(
+        seed["gid"] == "gid_patient_10457410" and seed["status"] == "selected"
+        for seed in result.seed_nodes
+    )
+    assert any("patient_10457410" in str(node["preview"]) for node in result.seed_nodes)
+
+
+def test_filter_patient_evidence_excludes_unconnected_terms():
+    """Evidence text must be grounded in the actual patient neighborhood, not arbitrary summary mentions."""
+    class PatientEvidenceMockNeo4jDriver(MockNeo4jDriver):
+        def query(self, cypher: str, params: dict = None):
+            if "MATCH (p {id: $patient_id})" in cypher or "MATCH (p)" in cypher and "RETURN DISTINCT n.id" in cypher:
+                return [
+                    {"id": "patient_10457410", "description": "Patient age 82, elderly"},
+                    {"id": "Clinical disease", "description": "diagnosis"},
+                ]
+            return super().query(cypher, params)
+
+    mock_db = PatientEvidenceMockNeo4jDriver()
+    evidence = [
+        {"id": "E1", "content": "aspirin is listed in the summary"},
+        {"id": "E2", "content": "patient_10457410 diagnosed_with Clinical disease"},
+    ]
+
+    filtered = _filter_patient_evidence(mock_db, evidence, "patient_10457410", 3)
+
+    assert len(filtered) == 1
+    assert filtered[0]["content"] == "patient_10457410 diagnosed_with Clinical disease"
+
+
+def test_build_grounded_response_lists_medications_from_evidence():
+    """Medication questions must surface exact evidence-derived medication names in the final answer."""
+    evidence = [
+        {"id": "E1", "content": "patient_10457410 DIAGNOSED_WITH Pneumonia"},
+        {"id": "E2", "content": "Ciprofloxacin IV 400 mg"},
+        {"id": "E3", "content": "Sodium Chloride 0.9% Flush 3 mL"},
+    ]
+
+    answer = _build_grounded_response(
+        question="Which drugs were given to patient_10457410?",
+        evidence=evidence,
+    )
+
+    assert "Ciprofloxacin" in answer
+    assert "Sodium Chloride" in answer
+    assert "[E2]" in answer and "[E3]" in answer
 
 
 def test_auditable_retriever_custom_confidence_weights():
