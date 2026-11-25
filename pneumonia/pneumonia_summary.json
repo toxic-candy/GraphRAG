@@ -1,0 +1,14 @@
+{
+  "filter": "diagnosis_and_note_text",
+  "pneumonia_admissions": 6535,
+  "pneumonia_event_rows": 4252,
+  "pneumonia_note_rows": 5460,
+  "cohort_rows_written": 6535,
+  "admissions_by_official_split": {
+    "train": 4951,
+    "val": 45,
+    "test": 552,
+    "test_subset": 11,
+    "other": 976
+  }
+}

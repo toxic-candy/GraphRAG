@@ -22,7 +22,7 @@ def _client():
 
 
 def _chat_model_name():
-    return os.getenv("GROQ_MODEL") or os.getenv("OPENAI_MODEL", "llama-3.3-70b-versatile")
+    return os.getenv("GROQ_MODEL") or os.getenv("OPENAI_MODEL", "openai/gpt-oss-20b")
 
 
 sum_prompt = """

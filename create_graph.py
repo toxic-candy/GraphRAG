@@ -47,7 +47,7 @@ def _extract_graph_elements_from_text(raw_text, source_element):
     if not api_key:
         return _fallback_extract_graph_elements(raw_text, source_element)
 
-    model = os.getenv("GROQ_MODEL") or os.getenv("OPENAI_MODEL", "llama-3.3-70b-versatile")
+    model = os.getenv("GROQ_MODEL") or os.getenv("OPENAI_MODEL", "openai/gpt-oss-20b")
     base_url = os.getenv("OPENAI_API_BASE_URL", "https://api.groq.com/openai/v1")
 
     user_prompt = (

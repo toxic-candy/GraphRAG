@@ -23,7 +23,7 @@ Copy `.env.example` to `.env` (already done) and put your free Groq API key:
 ```bash
 # In .env:
 GROQ_API_KEY=gsk_your_key_here
-GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MODEL=openai/gpt-oss-20b
 USE_LLM_ANSWER=1
 ```
 
